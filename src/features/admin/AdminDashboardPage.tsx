@@ -18,7 +18,22 @@ import {
 import { Routes, Route, useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { usersApi, coursesApi, activitiesApi, logsApi, type ApiUser, type ApiCourse, type ApiActivity, type ApiLog } from "@/services/api";
+import {
+  usersApi,
+  coursesApi,
+  activitiesApi,
+  logsApi,
+  proofsApi,
+  pontuacaoApi,
+  tiposAtividadeApi,
+  notificacoesApi,
+  categoriaAtividadeApi,
+  type ApiUser,
+  type ApiCourse,
+  type ApiActivity,
+  type ApiLog,
+  type ApiNotification,
+} from "@/services/api";
 
 // ─── Nav Items (Sidebar) ─────────────────────────────────────────
 const navItems: NavItem[] = [
@@ -63,28 +78,56 @@ function BottomNav() {
 // ─── Dashboard ───────────────────────────────────────────────────
 function AdminDashboard() {
   const [loading, setLoading] = useState(true);
-  useEffect(() => { setTimeout(() => setLoading(false), 500); }, []);
+  const [metrics, setMetrics] = useState({ alunos: 0, cursos: 0, atividades: 0, concluidas: 0 });
+  const [logs, setLogs] = useState<ApiLog[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      usersApi.list(),
+      coursesApi.list(),
+      activitiesApi.list(),
+      logsApi.list(),
+    ])
+      .then(([users, courses, activities, recentLogs]) => {
+        setMetrics({
+          alunos: users.filter((u) => u.role === "student").length,
+          cursos: courses.length,
+          atividades: activities.length,
+          concluidas: activities.filter((a) => a.backendStatus === "APROVADO").length,
+        });
+        setLogs(recentLogs.slice(0, 4));
+      })
+      .catch(() => toast.error("Erro ao carregar métricas"))
+      .finally(() => setLoading(false));
+  }, []);
 
   if (loading) return <CardSkeleton />;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="Total de Alunos" value={128} icon={Users} trend="+12 este mês" />
-        <MetricCard title="Total de Cursos" value={15} icon={BookOpen} />
-        <MetricCard title="Atividades Cadastradas" value={47} icon={ClipboardList} variant="accent" />
-        <MetricCard title="Atividades Concluídas" value={312} icon={ClipboardList} />
+        <MetricCard title="Total de Alunos" value={metrics.alunos} icon={Users} />
+        <MetricCard title="Total de Cursos" value={metrics.cursos} icon={BookOpen} />
+        <MetricCard title="Atividades Cadastradas" value={metrics.atividades} icon={ClipboardList} variant="accent" />
+        <MetricCard title="Atividades Concluídas" value={metrics.concluidas} icon={ClipboardList} />
       </div>
       <div className="bg-card border rounded-md p-5">
         <h3 className="font-display font-semibold mb-3">Atividade Recente</h3>
-        <div className="space-y-3">
-          {["João enviou comprovante - Palestra de IA", "Maria aprovou 3 comprovantes", "Novo curso criado: Análise de Dados", "Ana se matriculou em Desenvolvimento Web"].map((msg, i) => (
-            <div key={i} className="flex items-start gap-3 text-sm py-2 border-b last:border-0">
-              <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
-              <span>{msg}</span>
-            </div>
-          ))}
-        </div>
+        {logs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhuma atividade recente.</p>
+        ) : (
+          <div className="space-y-3">
+            {logs.map((log, i) => (
+              <div key={i} className="flex items-start gap-3 text-sm py-2 border-b last:border-0">
+                <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
+                <div>
+                  <span>{log.action}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{log.user} · {log.date}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -98,27 +141,31 @@ function AdminUsers() {
   const [editingUser, setEditingUser] = useState<ApiUser | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<string>("");
-  const [formData, setFormData] = useState({ name: "", email: "", password: "", matricula: "" });
+  const [formData, setFormData] = useState({ name: "", email: "", matricula: "" });
 
   const load = useCallback(async () => {
     setLoading(true);
-    const list = await usersApi.list();
-    setData(list);
-    setLoading(false);
+    try {
+      setData(await usersApi.list());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar usuários");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const openCreate = () => {
     setEditingUser(null);
-    setFormData({ name: "", email: "", password: "", matricula: "" });
+    setFormData({ name: "", email: "", matricula: "" });
     setSelectedProfile("");
     setModalOpen(true);
   };
 
   const openEdit = (user: ApiUser) => {
     setEditingUser(user);
-    setFormData({ name: user.name, email: user.email, password: "", matricula: user.matricula });
+    setFormData({ name: user.name, email: user.email, matricula: user.matricula });
     setSelectedProfile(user.role);
     setModalOpen(true);
   };
@@ -126,32 +173,43 @@ function AdminUsers() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const profileLabel = selectedProfile === "admin" ? "Administrador" : selectedProfile === "coordinator" ? "Coordenador" : "Aluno";
-    
-    const userPayload = {
-      name: formData.name,
-      email: formData.email,
-      profile: profileLabel,
-      role: selectedProfile as ApiUser["role"], 
-      matricula: selectedProfile === "student" ? formData.matricula : "-"
-    };
-
-    if (editingUser) {
-      await usersApi.update(editingUser.id, userPayload);
-      toast.success("Usuário atualizado!");
-    } else {
-      await usersApi.create(userPayload);
-      toast.success("Usuário criado!");
+    try {
+      if (editingUser) {
+        await usersApi.update(editingUser.id, {
+          name: formData.name,
+          email: formData.email,
+          profile: profileLabel,
+          role: selectedProfile as ApiUser["role"],
+          matricula: selectedProfile === "student" ? formData.matricula : "-",
+        });
+        toast.success("Usuário atualizado!");
+      } else {
+        await usersApi.create({
+          name: formData.name,
+          email: formData.email,
+          profile: profileLabel,
+          role: selectedProfile as ApiUser["role"],
+          matricula: selectedProfile === "student" ? formData.matricula : "-",
+        });
+        toast.success("Usuário criado! As credenciais foram enviadas por e-mail.");
+      }
+      setModalOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar usuário");
     }
-    setModalOpen(false);
-    load();
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    await usersApi.delete(deleteId);
-    toast.success("Usuário excluído!");
-    setDeleteId(null);
-    load();
+    try {
+      await usersApi.delete(deleteId);
+      toast.success("Usuário excluído!");
+      setDeleteId(null);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao excluir usuário");
+    }
   };
 
   const columns: Column<ApiUser>[] = [
@@ -163,7 +221,6 @@ function AdminUsers() {
       </span>
     )},
     { key: "matricula", header: "Matrícula" },
-    { key: "createdAt", header: "Criado em" },
     { key: "actions", header: "Ações", render: (item: ApiUser) => (
       <div className="flex gap-1">
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e: React.MouseEvent) => { e.stopPropagation(); openEdit(item); }}><Pencil className="h-4 w-4" /></Button>
@@ -179,16 +236,18 @@ function AdminUsers() {
         <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Novo Usuário</Button>
       </div>
 
-      {loading ? <TableSkeleton columns={6} /> : data.length === 0 ? <EmptyState title="Nenhum usuário" description="Clique em 'Novo Usuário' para começar." /> : <DataTable columns={columns} data={data} />}
+      {loading ? <TableSkeleton columns={4} /> : data.length === 0 ? <EmptyState title="Nenhum usuário" description="Clique em 'Novo Usuário' para começar." /> : <DataTable columns={columns} data={data} />}
 
       <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editingUser ? "Editar Usuário" : "Novo Usuário"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2"><Label>Nome</Label><Input placeholder="Nome completo" required value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} /></div>
           <div className="space-y-2"><Label>Email</Label><Input type="email" placeholder="email@senac.br" required value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} /></div>
-          {!editingUser && <div className="space-y-2"><Label>Senha</Label><Input type="password" placeholder="••••••••" required value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} /></div>}
+          <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded p-2">
+  ℹ              Uma senha provisória será gerada automaticamente e enviada por e-mail ao usuário.
+         </p>
           <div className="space-y-2">
             <Label>Perfil</Label>
-            <Select value={selectedProfile} onValueChange={(v: string) => setSelectedProfile(v)}>
+            <Select value={selectedProfile} onValueChange={(v: string) => setSelectedProfile(v)} required>
               <SelectTrigger><SelectValue placeholder="Selecione o perfil" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="admin">Administrador</SelectItem>
@@ -223,8 +282,13 @@ function AdminCourses() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setData(await coursesApi.list());
-    setLoading(false);
+    try {
+      setData(await coursesApi.list());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar cursos");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -234,24 +298,32 @@ function AdminCourses() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { ...formData, coordinatorName: "Maria Coordenadora" };
-    if (editing) {
-      await coursesApi.update(editing.id, payload);
-      toast.success("Curso atualizado!");
-    } else {
-      await coursesApi.create(payload);
-      toast.success("Curso criado!");
+    const payload = { ...formData, coordinatorName: "—" };
+    try {
+      if (editing) {
+        await coursesApi.update(editing.id, payload);
+        toast.success("Curso atualizado!");
+      } else {
+        await coursesApi.create(payload);
+        toast.success("Curso criado!");
+      }
+      setModalOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar curso");
     }
-    setModalOpen(false);
-    load();
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    await coursesApi.delete(deleteId);
-    toast.success("Curso excluído!");
-    setDeleteId(null);
-    load();
+    try {
+      await coursesApi.delete(deleteId);
+      toast.success("Curso excluído!");
+      setDeleteId(null);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+    }
   };
 
   const columns: Column<ApiCourse>[] = [
@@ -294,69 +366,129 @@ function AdminCourses() {
 }
 
 // ─── Activities ──────────────────────────────────────────────────
+const statusAtividadePt: Record<string, string> = {
+  PENDENTE: "Pendente",
+  APROVADO: "Aprovado",
+  REPROVADO: "Reprovado",
+};
+
 function AdminActivities() {
   const [data, setData] = useState<ApiActivity[]>([]);
   const [coursesList, setCoursesList] = useState<ApiCourse[]>([]);
+  const [tipos, setTipos] = useState<{ id: string; nome: string }[]>([]);
+  const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ApiActivity | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ title: "", description: "", courseId: "", category: "", points: "", proofType: "" });
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    courseId: "",
+    tipoAtividadeId: "",
+    categoriaId: "",
+    points: "",
+    horas: "",
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [acts, courses] = await Promise.all([activitiesApi.list(), coursesApi.list()]);
-    setData(acts);
-    setCoursesList(courses);
-    setLoading(false);
+    try {
+      const [acts, courses, t, cats] = await Promise.all([
+        activitiesApi.list(),
+        coursesApi.list(),
+        tiposAtividadeApi.list(),
+        categoriaAtividadeApi.list(),
+      ]);
+      setData(acts);
+      setCoursesList(courses);
+      setTipos(t.map((x) => ({ id: x.id, nome: x.nome })));
+      setCategorias(cats.map((x) => ({ id: x.id, nome: x.nome })));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar atividades");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const openCreate = () => { setEditing(null); setFormData({ title: "", description: "", courseId: "", category: "", points: "", proofType: "" }); setModalOpen(true); };
-  const openEdit = (a: ApiActivity) => { setEditing(a); setFormData({ title: a.title, description: a.description, courseId: a.courseId, category: a.category, points: String(a.points), proofType: a.proofType }); setModalOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+   setFormData({ title: "", description: "", courseId: "", tipoAtividadeId: "", categoriaId: "", points: "", horas: "" });
+    setModalOpen(true);
+  };
+
+  const openEdit = (a: ApiActivity) => {
+    setEditing(a);
+    setFormData({
+      title: a.title,
+      description: a.description,
+      courseId: a.courseId,
+      tipoAtividadeId: a.idTipoAtividade ?? "",
+      categoriaId: "",
+      points: String(a.points),
+      horas: a.horasSolicitadas != null ? String(a.horasSolicitadas) : "",
+    });
+    setModalOpen(true);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const courseName = coursesList.find(c => c.id === formData.courseId)?.name || "";
-    const payload = { 
-      ...formData, 
-      points: Number(formData.points), 
-      courseName, 
-      proofType: formData.proofType as ApiActivity["proofType"] 
+    const pts = Number(formData.points);
+    const horas = formData.horas.trim() ? Number(formData.horas) : undefined;
+    const payload = {
+      title: formData.title,
+      description: formData.description,
+      courseId: formData.courseId,
+      tipoAtividadeId: formData.tipoAtividadeId,
+      points: pts,
+      horasSolicitadas: horas,
     };
-
-    if (editing) {
-      await activitiesApi.update(editing.id, payload);
-      toast.success("Atividade atualizada!");
-    } else {
-      await activitiesApi.create(payload);
-      toast.success("Atividade criada!");
+    try {
+      if (editing) {
+        await activitiesApi.update(editing.id, payload);
+        toast.success("Atividade atualizada!");
+      } else {
+        await activitiesApi.create(payload);
+        toast.success("Atividade criada!");
+      }
+      setModalOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar atividade");
     }
-    setModalOpen(false);
-    load();
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    await activitiesApi.delete(deleteId);
-    toast.success("Atividade excluída!");
-    setDeleteId(null);
-    load();
+    try {
+      await activitiesApi.delete(deleteId);
+      toast.success("Atividade excluída!");
+      setDeleteId(null);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+    }
   };
-
-  const proofLabels: Record<string, string> = { certificate: "Certificado", photo: "Foto", document: "Documento" };
 
   const columns: Column<ApiActivity>[] = [
     { key: "title", header: "Nome" },
+    { key: "nomeAluno", header: "Aluno", render: (item: ApiActivity) => <span>{item.nomeAluno || "—"}</span> },
     { key: "courseName", header: "Curso" },
-    { key: "category", header: "Categoria" },
+    { key: "category", header: "Tipo" },
     { key: "points", header: "Pontos" },
-    { key: "proofType", header: "Comprovação", render: (item: ApiActivity) => <span>{proofLabels[item.proofType] || item.proofType}</span> },
+    {
+      key: "backendStatus",
+      header: "Status",
+      render: (item: ApiActivity) => (
+        <span>{statusAtividadePt[item.backendStatus ?? ""] ?? item.backendStatus ?? "—"}</span>
+      ),
+    },
     { key: "actions", header: "Ações", render: (item: ApiActivity) => (
       <div className="flex gap-1">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e: React.MouseEvent) => { e.stopPropagation(); openEdit(item); }}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteId(item.id); }}><Trash2 className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(ev: React.MouseEvent) => { ev.stopPropagation(); openEdit(item); }}><Pencil className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(ev: React.MouseEvent) => { ev.stopPropagation(); setDeleteId(item.id); }}><Trash2 className="h-4 w-4" /></Button>
       </div>
     )},
   ];
@@ -367,12 +499,15 @@ function AdminActivities() {
         <h2 className="font-display font-semibold text-lg">Atividades</h2>
         <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Nova Atividade</Button>
       </div>
-      {loading ? <TableSkeleton columns={6} /> : data.length === 0 ? <EmptyState title="Nenhuma atividade" /> : <DataTable columns={columns} data={data} />}
+      {loading ? <TableSkeleton columns={7} /> : data.length === 0 ? <EmptyState title="Nenhuma atividade" /> : <DataTable columns={columns} data={data} />}
 
       <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Editar Atividade" : "Nova Atividade"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2"><Label>Título</Label><Input placeholder="Título" required value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} /></div>
           <div className="space-y-2"><Label>Descrição</Label><Textarea placeholder="Descrição" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
+       <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded p-2">
+          O aluno seleciona esta atividade ao enviar o comprovante. Aqui você cadastra o modelo disponível para o curso.
+        </p>
           <div className="space-y-2">
             <Label>Curso</Label>
             <Select value={formData.courseId} onValueChange={(v: string) => setFormData(p => ({ ...p, courseId: v }))}>
@@ -380,19 +515,22 @@ function AdminActivities() {
               <SelectContent>{coursesList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="space-y-2"><Label>Categoria</Label><Input placeholder="Ex: Palestra, Workshop" required value={formData.category} onChange={e => setFormData(p => ({ ...p, category: e.target.value }))} /></div>
           <div className="space-y-2">
-            <Label>Tipo de Comprovação</Label>
-            <Select value={formData.proofType} onValueChange={(v: string) => setFormData(p => ({ ...p, proofType: v }))}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="certificate">Certificado</SelectItem>
-                <SelectItem value="photo">Foto</SelectItem>
-                <SelectItem value="document">Documento</SelectItem>
-              </SelectContent>
+            <Label>Tipo de atividade</Label>
+            <Select value={formData.tipoAtividadeId} onValueChange={(v: string) => setFormData(p => ({ ...p, tipoAtividadeId: v }))}>
+              <SelectTrigger><SelectValue placeholder="Selecione o tipo (cadastre em /tipos-atividade)" /></SelectTrigger>
+              <SelectContent>{tipos.map((t) => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="space-y-2"><Label>Pontos</Label><Input type="number" placeholder="Ex: 10" required value={formData.points} onChange={e => setFormData(p => ({ ...p, points: e.target.value }))} /></div>
+          <div className="space-y-2">
+            <Label>Categoria</Label>
+            <Select value={formData.categoriaId} onValueChange={(v: string) => setFormData(p => ({ ...p, categoriaId: v }))}>
+              <SelectTrigger><SelectValue placeholder="Selecione a categoria (opcional)" /></SelectTrigger>
+              <SelectContent>{categorias.map((cat) => <SelectItem key={cat.id} value={cat.id}>{cat.nome}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2"><Label>Horas solicitadas (opcional)</Label><Input type="number" min={0} placeholder="Ex: 8" value={formData.horas} onChange={e => setFormData(p => ({ ...p, horas: e.target.value }))} /></div>
+          <div className="space-y-2"><Label>Pontos</Label><Input type="number" min={0} placeholder="Ex: 10" required value={formData.points} onChange={e => setFormData(p => ({ ...p, points: e.target.value }))} /></div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
             <Button type="submit">{editing ? "Salvar" : "Criar Atividade"}</Button>
@@ -407,17 +545,35 @@ function AdminActivities() {
 
 // ─── Notifications ───────────────────────────────────────────────
 function AdminNotifications() {
-  const [notifications, setNotifications] = useState([
-    { id: 1, msg: "Novo comprovante enviado por João Pedro", time: "Há 5 min", read: false },
-    { id: 2, msg: "Curso 'Análise de Dados' criado por Maria", time: "Há 1h", read: false },
-    { id: 3, msg: "3 comprovantes aprovados", time: "Há 3h", read: true },
-    { id: 4, msg: "Novo aluno cadastrado: Pedro Santos", time: "Há 1 dia", read: true },
-  ]);
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<ApiNotification[]>([])
+  const [loading, setLoading] = useState(true);
 
-  const markAsRead = (id: number) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    toast.success("Notificação marcada como lida");
+  useEffect(() => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    notificacoesApi
+      .list(user.id)
+      .then((list) => {
+        setNotifications(list);
+      })
+      .catch(() => toast.error("Erro ao carregar notificações"))
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  const markAsRead = async (id: number) => {
+    try {
+      await notificacoesApi.marcarLida(id);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      toast.success("Notificação marcada como lida");
+    } catch {
+      toast.error("Não foi possível atualizar");
+    }
   };
+
+  if (loading) return <TableSkeleton columns={1} />;
 
   return (
     <div className="space-y-4">
@@ -430,12 +586,15 @@ function AdminNotifications() {
             <div key={n.id} className={`flex items-center justify-between p-4 ${!n.read ? "bg-primary/5" : ""}`}>
               <div className="flex items-center gap-3">
                 {!n.read && <div className="w-2 h-2 rounded-full bg-accent shrink-0" />}
-                <span className="text-sm">{n.msg}</span>
+                <div>
+                  <p className="text-sm font-medium">{n.titulo}</p>
+                  <p className="text-xs text-muted-foreground">{n.mensagem}</p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground whitespace-nowrap ml-4">{n.time}</span>
                 {!n.read && (
-                  <Button variant="ghost" size="sm" className="text-xs" onClick={() => markAsRead(n.id)}>Mark as read</Button>
+                  <Button variant="ghost" size="sm" className="text-xs" onClick={() => markAsRead(n.id)}>Marcar como lida</Button>
                 )}
               </div>
             </div>
@@ -452,7 +611,11 @@ function AdminLogs() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    logsApi.list().then(d => { setData(d); setLoading(false); });
+    logsApi
+      .list()
+      .then((d) => setData(d))
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Erro ao carregar logs"))
+      .finally(() => setLoading(false));
   }, []);
 
   const columns: Column<ApiLog>[] = [

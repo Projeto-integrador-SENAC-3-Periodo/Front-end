@@ -9,8 +9,8 @@ import { AlertCircle } from "lucide-react";
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [identificador, setIdentificador] = useState("");
+  const [senha, setSenha] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -18,28 +18,28 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const success = await login(email, password);
+
+    const success = await login(identificador, senha);
     setLoading(false);
+
     if (success) {
       const saved = JSON.parse(localStorage.getItem("senac_user") || "{}");
       if (saved.role === "admin") navigate("/admin");
       else if (saved.role === "coordinator") navigate("/coordinator");
       else navigate("/student");
     } else {
-      setError("Credenciais inválidas. Tente os e-mails de teste abaixo.");
+      setError("Credenciais inválidas. Verifique seu e-mail/matrícula e senha.");
     }
   };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-senac-blue p-6">
       <div className="mb-6 w-full max-w-sm flex justify-center">
-        <img 
+        <img
           src="/marca_senac.png"
           alt="Senac"
           className="w-40 h-auto object-contain"
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-          }}
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
         />
       </div>
 
@@ -59,48 +59,41 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-gray-700 font-semibold">Email ou Matrícula</Label>
+            <Label htmlFor="identificador" className="text-gray-700 font-semibold">
+              E-mail ou Matrícula
+            </Label>
             <Input
-              id="email"
+              id="identificador"
               type="text"
-              placeholder="seu@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="seu@email.com ou matrícula"
+              value={identificador}
+              onChange={(e) => setIdentificador(e.target.value)}
               className="h-11 bg-gray-50 border-gray-200 focus:border-senac-orange focus:ring-senac-orange"
               required
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password" className="text-gray-700 font-semibold">Senha</Label>
+            <Label htmlFor="senha" className="text-gray-700 font-semibold">Senha</Label>
             <Input
-              id="password"
+              id="senha"
               type="password"
               placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
               className="h-11 bg-gray-50 border-gray-200 focus:border-senac-orange focus:ring-senac-orange"
               required
             />
           </div>
 
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             className="w-full bg-senac-orange hover:bg-orange-600 text-white font-bold h-12 text-lg transition-all shadow-md"
             disabled={loading}
           >
             {loading ? "Entrando..." : "Entrar"}
           </Button>
         </form>
-
-        <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-           <div className="text-gray-400 space-y-1">
-              <p className="font-bold uppercase tracking-tighter text-[11px]">Credenciais de teste:</p>
-              <p className="text-sm font-bold text-gray-700">
-                admin@senac.br · coord@senac.br · aluno@senac.br
-              </p>
-           </div>
-        </div>
       </div>
     </div>
   );

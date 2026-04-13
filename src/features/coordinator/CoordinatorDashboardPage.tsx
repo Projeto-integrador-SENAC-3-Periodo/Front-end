@@ -14,12 +14,28 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  LayoutDashboard, BookOpen, Users, ClipboardList, FileCheck, Award, Bell, Plus, Pencil, Trash2, Eye, Check, X, User,
+ LayoutDashboard, BookOpen, Users, ClipboardList, FileCheck, Award, Bell, Plus, Pencil, Trash2, Eye, Check, X, User, Download,
 } from "lucide-react";
 import { Routes, Route, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { coursesApi, activitiesApi, proofsApi, type ApiCourse, type ApiActivity, type ApiProof } from "@/services/api";
+import {
+  coursesApi,
+  activitiesApi,
+  proofsApi,
+  usersApi,
+  tiposAtividadeApi,
+  userCursoApi,
+  categoriaAtividadeApi,
+  certificadosApi,
+  type ApiNotification,
+  notificacoesApi,
+  type ApiCourse,
+  type ApiActivity,
+  type ApiProof,
+  type ApiUser,
+  type ApiCertificate,
+} from "@/services/api";
 
 // ─── Nav Items (Sidebar) ─────────────────────────────────────────
 const navItems: NavItem[] = [
@@ -64,27 +80,41 @@ function BottomNav() {
 
 // ─── Dashboard ───────────────────────────────────────────────────
 function CoordDashboard() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  useEffect(() => { setTimeout(() => setLoading(false), 500); }, []);
+  const [metrics, setMetrics] = useState({ cursos: 0, alunos: 0, pendentes: 0, certificados: 0 });
+
+  useEffect(() => {
+    if (!user?.id) return;
+    coursesApi.list()
+      .then(async (courses) => {
+        const alunosPorCurso = await Promise.all(courses.map((c) => userCursoApi.listarAlunos(c.id).catch(() => [])));
+        const alunos = alunosPorCurso.flat();
+        const ids = [...new Set(alunos.map((a) => a.id))];
+        const [proofs, certs] = await Promise.all([
+          proofsApi.list(),
+          Promise.all(ids.map((id) => certificadosApi.listByAluno(id).catch((): ApiCertificate[] => []))),
+        ]);
+        setMetrics({
+          cursos: courses.length,
+          alunos: ids.length,
+          pendentes: proofs.filter((p) => p.status === "pending").length,
+          certificados: certs.flat().length,
+        });
+      })
+      .catch(() => toast.error("Erro ao carregar métricas"))
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
   if (loading) return <CardSkeleton />;
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="Cursos Ativos" value={3} icon={BookOpen} />
-        <MetricCard title="Alunos Vinculados" value={64} icon={Users} />
-        <MetricCard title="Comprovantes Pendentes" value={2} icon={FileCheck} variant="accent" />
-        <MetricCard title="Certificados Emitidos" value={89} icon={Award} />
-      </div>
-      <div className="bg-card border rounded-md p-5">
-        <h3 className="font-display font-semibold mb-3">Atividade Recente</h3>
-        <div className="space-y-3">
-          {["João enviou comprovante - Palestra de IA", "Ana Silva completou Workshop React", "Novo aluno vinculado ao curso Design Gráfico"].map((msg, i) => (
-            <div key={i} className="flex items-start gap-3 text-sm py-2 border-b last:border-0">
-              <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
-              <span>{msg}</span>
-            </div>
-          ))}
-        </div>
+        <MetricCard title="Cursos ativos" value={metrics.cursos} icon={BookOpen} />
+        <MetricCard title="Alunos vinculados" value={metrics.alunos} icon={Users} />
+        <MetricCard title="Comprovantes pendentes" value={metrics.pendentes} icon={FileCheck} variant="accent" />
+        <MetricCard title="Certificados emitidos" value={metrics.certificados} icon={Award} />
       </div>
     </div>
   );
@@ -103,9 +133,14 @@ function CoordCourses() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const list = await coursesApi.listByCoordinator(user.id);
-    setData(list);
-    setLoading(false);
+    try {
+      const list = await coursesApi.listByCoordinator(user.id);
+      setData(list);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar cursos");
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
@@ -116,21 +151,31 @@ function CoordCourses() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (editing) {
-      await coursesApi.update(editing.id, formData);
-      toast.success("Curso atualizado!");
-    } else {
-      await coursesApi.create({ ...formData, coordinatorId: user.id, coordinatorName: user.name });
-      toast.success("Curso criado!");
+    try {
+      if (editing) {
+        await coursesApi.update(editing.id, formData);
+        toast.success("Curso atualizado!");
+      } else {
+        await coursesApi.create({ ...formData, coordinatorId: user.id, coordinatorName: user.name });
+        toast.success("Curso criado!");
+      }
+      setModalOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar curso");
     }
-    setModalOpen(false); load();
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    await coursesApi.delete(deleteId);
-    toast.success("Curso excluído!");
-    setDeleteId(null); load();
+    try {
+      await coursesApi.delete(deleteId);
+      toast.success("Curso excluído!");
+      setDeleteId(null);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+    }
   };
 
   const columns: Column<ApiCourse>[] = [
@@ -167,32 +212,134 @@ function CoordCourses() {
 }
 
 // ─── Students ────────────────────────────────────────────────────
-interface Student { name: string; email: string; matricula: string; course: string; points: number; }
+interface StudentRow { id: string; alunoId: string; cursoId: string; name: string; email: string; matricula: string; course: string }
 function CoordStudents() {
   const [modalOpen, setModalOpen] = useState(false);
-  const students: Student[] = [
-    { name: "João Pedro", email: "joao@senac.br", matricula: "2024001", course: "Desenvolvimento Web", points: 45 },
-    { name: "Ana Silva", email: "ana@senac.br", matricula: "2024002", course: "Análise de Dados", points: 85 },
-    { name: "Pedro Santos", email: "pedro@senac.br", matricula: "2024003", course: "Design Gráfico", points: 60 },
+  const [students, setStudents] = useState<StudentRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [allUsers, setAllUsers] = useState<ApiUser[]>([]);
+  const [courses, setCourses] = useState<ApiCourse[]>([]);
+  const [selAluno, setSelAluno] = useState("");
+  const [selCurso, setSelCurso] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [courseList, userList] = await Promise.all([coursesApi.list(), usersApi.list()]);
+      setCourses(courseList);
+      setAllUsers(userList.filter((u) => u.role === "student"));
+      const byId = new Map(userList.map((u) => [u.id, u]));
+      const parts = await Promise.all(
+        courseList.map(async (c) => {
+          const alunos = await userCursoApi.listarAlunos(c.id);
+          return alunos.map((a) => {
+            const u = byId.get(a.id);
+            return {
+              id: `${a.id}-${c.id}`,
+              alunoId: a.id,
+              cursoId: c.id,
+              name: a.nome,
+              email: a.email,
+              matricula: u?.matricula && u.matricula !== "-" ? u.matricula : "—",
+              course: c.name,
+            };
+          });
+        })
+      );
+      setStudents(parts.flat());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar alunos");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const columns: Column<StudentRow>[] = [
+    { key: "name", header: "Nome" },
+    { key: "email", header: "Email" },
+    { key: "matricula", header: "Matrícula" },
+    { key: "course", header: "Curso" },
+    { key: "actions", header: "Ações", render: (item: StudentRow) => (
+      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Desvincular aluno"
+        onClick={() => handleDesvincular(item.alunoId, item.cursoId)}>
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    )},
   ];
-  const columns: Column<Student>[] = [
-    { key: "name", header: "Nome" }, { key: "email", header: "Email" }, { key: "matricula", header: "Matrícula" }, { key: "course", header: "Curso" },
-    { key: "points", header: "Pontos", render: (item) => <span className="font-display font-bold">{item.points}</span> },
-  ];
+
+  const handleDesvincular = async (alunoId: string, cursoId: string) => {
+    try {
+      await userCursoApi.desvincular(cursoId, alunoId);
+      toast.success("Aluno desvinculado do curso!");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao desvincular");
+    }
+  };
+
+  const vincular = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selAluno || !selCurso) return;
+    try {
+      await userCursoApi.vincular(selCurso, selAluno);
+      toast.success("Aluno vinculado ao curso!");
+      setModalOpen(false);
+      setSelAluno("");
+      setSelCurso("");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao vincular");
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between"><h2 className="font-display font-semibold text-lg">Alunos Vinculados</h2><Button onClick={() => setModalOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Vincular Aluno</Button></div>
-      <DataTable columns={columns} data={students} />
-      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title="Vincular Aluno ao Curso">
-        <form onSubmit={(e) => { e.preventDefault(); toast.success("Aluno vinculado!"); setModalOpen(false); }} className="space-y-4">
-          <div className="space-y-2"><Label>Aluno</Label><Select><SelectTrigger><SelectValue placeholder="Selecione o aluno" /></SelectTrigger><SelectContent><SelectItem value="3">João Pedro</SelectItem><SelectItem value="4">Ana Silva</SelectItem><SelectItem value="5">Pedro Santos</SelectItem></SelectContent></Select></div>
-          <div className="space-y-2"><Label>Curso</Label><Select><SelectTrigger><SelectValue placeholder="Selecione o curso" /></SelectTrigger><SelectContent><SelectItem value="1">Desenvolvimento Web</SelectItem><SelectItem value="2">Análise de Dados</SelectItem><SelectItem value="3">Design Gráfico</SelectItem></SelectContent></Select></div>
-          <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button><Button type="submit">Vincular</Button></div>
+      <div className="flex items-center justify-between">
+        <h2 className="font-display font-semibold text-lg">Alunos vinculados</h2>
+        <Button onClick={() => setModalOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Vincular aluno</Button>
+      </div>
+      {loading ? <TableSkeleton columns={4} /> : <DataTable columns={columns} data={students} />}
+      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title="Vincular aluno ao curso">
+        <form onSubmit={vincular} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Aluno</Label>
+            <Select value={selAluno} onValueChange={setSelAluno}>
+              <SelectTrigger><SelectValue placeholder="Selecione o aluno" /></SelectTrigger>
+              <SelectContent>
+                {allUsers.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>{u.name} ({u.email})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Curso</Label>
+            <Select value={selCurso} onValueChange={setSelCurso}>
+              <SelectTrigger><SelectValue placeholder="Selecione o curso" /></SelectTrigger>
+              <SelectContent>
+                {courses.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
+            <Button type="submit">Vincular</Button>
+          </div>
         </form>
       </ModalForm>
     </div>
   );
 }
+
+const coordStatusPt: Record<string, string> = {
+  PENDENTE: "Pendente",
+  APROVADO: "Aprovado",
+  REPROVADO: "Reprovado",
+};
 
 // ─── Activities ──────────────────────────────────────────────────
 function CoordActivities() {
@@ -202,37 +349,106 @@ function CoordActivities() {
   const [editing, setEditing] = useState<ApiActivity | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [coursesList, setCoursesList] = useState<ApiCourse[]>([]);
-  const [formData, setFormData] = useState({ title: "", description: "", courseId: "", category: "", points: "", proofType: "" });
+  const [tipos, setTipos] = useState<{ id: string; nome: string }[]>([]);
+  const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    courseId: "",
+    tipoAtividadeId: "",
+    categoriaId: "",
+    points: "",
+    horas: "",
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [acts, courses] = await Promise.all([activitiesApi.list(), coursesApi.list()]);
-    setData(acts); setCoursesList(courses); setLoading(false);
+    try {
+      const [acts, courses, t, cats] = await Promise.all([
+        activitiesApi.list(),
+        coursesApi.list(),
+        tiposAtividadeApi.list(),
+        categoriaAtividadeApi.list(),
+      ]);
+      setData(acts);
+      setCoursesList(courses);
+      setTipos(t.map((x) => ({ id: x.id, nome: x.nome })));
+      setCategorias(cats.map((x) => ({ id: x.id, nome: x.nome })));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const openCreate = () => { setEditing(null); setFormData({ title: "", description: "", courseId: "", category: "", points: "", proofType: "" }); setModalOpen(true); };
-  const openEdit = (a: ApiActivity) => { setEditing(a); setFormData({ title: a.title, description: a.description, courseId: a.courseId, category: a.category, points: String(a.points), proofType: a.proofType }); setModalOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+    setFormData({ title: "", description: "", courseId: "", tipoAtividadeId: "", categoriaId: "", points: "", horas: "" });
+    setModalOpen(true);
+  };
+
+  const openEdit = (a: ApiActivity) => {
+    setEditing(a);
+    setFormData({
+      title: a.title,
+      description: a.description,
+      courseId: a.courseId,
+      tipoAtividadeId: a.idTipoAtividade ?? "",
+      categoriaId: "",
+      points: String(a.points),
+      horas: a.horasSolicitadas != null ? String(a.horasSolicitadas) : "",
+    });
+    setModalOpen(true);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const courseName = coursesList.find(c => c.id === formData.courseId)?.name || "";
-    const payload = { ...formData, points: Number(formData.points), courseName, proofType: formData.proofType as ApiActivity["proofType"] };
-    if (editing) await activitiesApi.update(editing.id, payload);
-    else await activitiesApi.create(payload);
-    setModalOpen(false); load(); toast.success(editing ? "Atividade atualizada!" : "Atividade criada!");
+    const pts = Number(formData.points);
+    const horas = formData.horas.trim() ? Number(formData.horas) : undefined;
+    const payload = {
+      title: formData.title,
+      description: formData.description,
+      courseId: formData.courseId,
+      tipoAtividadeId: formData.tipoAtividadeId,
+      points: pts,
+      horasSolicitadas: horas,
+    };
+    try {
+      if (editing) await activitiesApi.update(editing.id, payload);
+      else await activitiesApi.create(payload);
+      toast.success(editing ? "Atividade atualizada!" : "Atividade criada!");
+      setModalOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
+    }
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    await activitiesApi.delete(deleteId); toast.success("Atividade excluída!"); setDeleteId(null); load();
+    try {
+      await activitiesApi.delete(deleteId);
+      toast.success("Atividade excluída!");
+      setDeleteId(null);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+    }
   };
 
-  const proofLabels: Record<string, string> = { certificate: "Certificado", photo: "Foto", document: "Documento" };
   const columns: Column<ApiActivity>[] = [
-    { key: "title", header: "Nome" }, { key: "courseName", header: "Curso" }, { key: "category", header: "Categoria" }, { key: "points", header: "Pontos" },
-    { key: "proofType", header: "Comprovação", render: (item) => <span>{proofLabels[item.proofType as string] || item.proofType}</span> },
+    { key: "title", header: "Nome" },
+    { key: "nomeAluno", header: "Aluno", render: (item) => <span>{item.nomeAluno || "—"}</span> },
+    { key: "courseName", header: "Curso" },
+    { key: "category", header: "Tipo" },
+    { key: "points", header: "Pontos" },
+    {
+      key: "backendStatus",
+      header: "Status",
+      render: (item) => <span>{coordStatusPt[item.backendStatus ?? ""] ?? item.backendStatus ?? "—"}</span>,
+    },
     { key: "actions", header: "Ações", render: (item) => (
       <div className="flex gap-1">
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(item)}><Pencil className="h-4 w-4" /></Button>
@@ -243,20 +459,48 @@ function CoordActivities() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between"><h2 className="font-display font-semibold text-lg">Atividades</h2><Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Nova Atividade</Button></div>
-      {loading ? <TableSkeleton columns={6} /> : data.length === 0 ? <EmptyState title="Nenhuma atividade" /> : <DataTable columns={columns} data={data} />}
-      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Editar Atividade" : "Nova Atividade"}>
+      <div className="flex items-center justify-between">
+        <h2 className="font-display font-semibold text-lg">Atividades</h2>
+        <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Nova atividade</Button>
+      </div>
+      {loading ? <TableSkeleton columns={7} /> : data.length === 0 ? <EmptyState title="Nenhuma atividade" /> : <DataTable columns={columns} data={data} />}
+      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Editar atividade" : "Nova atividade"}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2"><Label>Título</Label><Input placeholder="Título" required value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Descrição</Label><Textarea placeholder="Descrição" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Curso</Label><Select value={formData.courseId} onValueChange={v => setFormData(p => ({ ...p, courseId: v }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{coursesList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-2"><Label>Categoria</Label><Input placeholder="Ex: Palestra" required value={formData.category} onChange={e => setFormData(p => ({ ...p, category: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Tipo de Comprovação</Label><Select value={formData.proofType} onValueChange={v => setFormData(p => ({ ...p, proofType: v }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent><SelectItem value="certificate">Certificado</SelectItem><SelectItem value="photo">Foto</SelectItem><SelectItem value="document">Documento</SelectItem></SelectContent></Select></div>
-          <div className="space-y-2"><Label>Pontos</Label><Input type="number" placeholder="10" required value={formData.points} onChange={e => setFormData(p => ({ ...p, points: e.target.value }))} /></div>
-          <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button><Button type="submit">{editing ? "Salvar" : "Criar"}</Button></div>
+          <div className="space-y-2"><Label>Título</Label><Input required value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} /></div>
+          <div className="space-y-2"><Label>Descrição</Label><Textarea value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
+          <p className="text-xs text-muted-foreground bg-muted rounded p-2">
+            ℹ️ O aluno seleciona esta atividade ao enviar o comprovante.
+          </p>
+          <div className="space-y-2">
+            <Label>Curso</Label>
+            <Select value={formData.courseId} onValueChange={v => setFormData(p => ({ ...p, courseId: v }))}>
+              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectContent>{coursesList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Tipo de atividade</Label>
+            <Select value={formData.tipoAtividadeId} onValueChange={v => setFormData(p => ({ ...p, tipoAtividadeId: v }))}>
+              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectContent>{tipos.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Categoria</Label>
+            <Select value={formData.categoriaId} onValueChange={(v) => setFormData(p => ({ ...p, categoriaId: v }))}>
+              <SelectTrigger><SelectValue placeholder="Selecione a categoria (opcional)" /></SelectTrigger>
+              <SelectContent>{categorias.map((cat) => <SelectItem key={cat.id} value={cat.id}>{cat.nome}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2"><Label>Horas (opcional)</Label><Input type="number" min={0} value={formData.horas} onChange={e => setFormData(p => ({ ...p, horas: e.target.value }))} /></div>
+          <div className="space-y-2"><Label>Pontos</Label><Input type="number" required value={formData.points} onChange={e => setFormData(p => ({ ...p, points: e.target.value }))} /></div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
+            <Button type="submit">{editing ? "Salvar" : "Criar"}</Button>
+          </div>
         </form>
       </ModalForm>
-      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir Atividade" description="Tem certeza?" onConfirm={handleDelete} confirmLabel="Excluir" />
+      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir atividade" description="Tem certeza?" onConfirm={handleDelete} confirmLabel="Excluir" />
     </div>
   );
 }
@@ -268,24 +512,40 @@ function CoordProofs() {
   const [selectedProof, setSelectedProof] = useState<ApiProof | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true); setData(await proofsApi.list()); setLoading(false);
+    setLoading(true);
+    try {
+      setData(await proofsApi.list());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar comprovações");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  // CORRIGIDO: Utilizando approve e reject que existem na sua api.ts
   const handleApprove = async () => {
     if (!selectedProof) return;
-    await proofsApi.approve(selectedProof.id);
-    toast.success("Comprovante aprovado!");
-    setSelectedProof(null); load();
+    try {
+      await proofsApi.approve(selectedProof.id);
+      toast.success("Comprovante aprovado!");
+      setSelectedProof(null);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao aprovar");
+    }
   };
 
   const handleReject = async () => {
     if (!selectedProof) return;
-    await proofsApi.reject(selectedProof.id);
-    toast.error("Comprovante rejeitado");
-    setSelectedProof(null); load();
+    try {
+      await proofsApi.reject(selectedProof.id);
+      toast.error("Comprovante rejeitado");
+      setSelectedProof(null);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao rejeitar");
+    }
   };
 
   const columns: Column<ApiProof>[] = [
@@ -322,42 +582,117 @@ function CoordProofs() {
 }
 
 // ─── Certificates ────────────────────────────────────────────────
-interface Certificate { student: string; activity: string; date: string; }
+
 function CoordCertificates() {
-  const certs: Certificate[] = [
-    { student: "João Pedro", activity: "Palestra de IA", date: "2024-03-15" },
-    { student: "Ana Silva", activity: "Workshop React", date: "2024-03-12" },
+  const { user } = useAuth();
+  const [certs, setCerts] = useState<ApiCertificate[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.id) { setLoading(false); return; }
+    // Busca todos os alunos dos cursos do coord, depois os certificados de cada um
+    coursesApi.list()
+      .then((courses) =>
+        Promise.all(courses.map((c) => userCursoApi.listarAlunos(c.id)))
+      )
+      .then((porCurso) => {
+        const alunos = porCurso.flat();
+        const ids = [...new Set(alunos.map((a) => a.id))];
+        return Promise.all(ids.map((id) => certificadosApi.listByAluno(id).catch((): ApiCertificate[] => [])));
+      })
+      .then((todos) => setCerts(todos.flat()))
+      .catch(() => toast.error("Erro ao carregar certificados"))
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  const columns: Column<ApiCertificate>[] = [
+    { key: "studentName", header: "Aluno" },
+    { key: "activityTitle", header: "Atividade" },
+    { key: "date", header: "Data de emissão" },
+    {
+      key: "downloadUrl",
+      header: "Arquivo",
+      render: (item: ApiCertificate) => (
+        <a href={item.downloadUrl} target="_blank" rel="noopener noreferrer">
+          <Button variant="outline" size="sm" className="gap-1">
+            <Download className="h-3 w-3" /> Baixar
+          </Button>
+        </a>
+      ),
+    },
   ];
-  const columns: Column<Certificate>[] = [{ key: "student", header: "Aluno" }, { key: "activity", header: "Atividade" }, { key: "date", header: "Data" }];
+
+  if (loading) return <TableSkeleton columns={4} />;
+
   return (
     <div className="space-y-4">
-      <h2 className="font-display font-semibold text-lg">Certificados Emitidos</h2>
-      {certs.length === 0 ? <EmptyState title="Nenhum certificado" /> : <DataTable columns={columns} data={certs} />}
+      <h2 className="font-display font-semibold text-lg">Certificados emitidos</h2>
+      {certs.length === 0 ? (
+        <EmptyState title="Nenhum certificado" description="Certificados aparecem após aprovação de comprovantes." />
+      ) : (
+        <DataTable columns={columns} data={certs} />
+      )}
     </div>
   );
 }
 
 // ─── Notifications ───────────────────────────────────────────────
-interface Notification { id: number; msg: string; time: string; read: boolean; }
 function CoordNotifications() {
-  const [notifications, setNotifications] = useState<Notification[]>([
-    { id: 1, msg: "João Pedro enviou comprovante para Palestra de IA", time: "Há 10 min", read: false },
-    { id: 2, msg: "Novo aluno vinculado ao curso Design Gráfico", time: "Há 2h", read: true },
-  ]);
-  const markAsRead = (id: number) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    toast.success("Notificação lida");
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<ApiNotification[]>([])
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    notificacoesApi
+      .list(user.id)
+      .then((list) =>
+        setNotifications(list)
+      )
+      .catch(() => toast.error("Erro ao carregar notificações"))
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  const markAsRead = async (id: number) => {
+    try {
+      await notificacoesApi.marcarLida(id);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      toast.success("Notificação lida");
+    } catch {
+      toast.error("Não foi possível atualizar");
+    }
   };
+
+  if (loading) return <TableSkeleton columns={1} />;
+
   return (
     <div className="space-y-4">
       <h2 className="font-display font-semibold text-lg">Notificações</h2>
-      {notifications.length === 0 ? <EmptyState title="Vazio" /> : (
-        <div className="bg-card border rounded-md divide-y">{notifications.map((n) => (
+      {notifications.length === 0 ? (
+        <EmptyState title="Nenhuma notificação" />
+      ) : (
+        <div className="bg-card border rounded-md divide-y">
+          {notifications.map((n) => (
             <div key={n.id} className={`flex items-center justify-between p-4 ${!n.read ? "bg-primary/5" : ""}`}>
-              <div className="flex items-center gap-3">{!n.read && <div className="w-2 h-2 rounded-full bg-accent" />}<span className="text-sm">{n.msg}</span></div>
-              <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{n.time}</span>{!n.read && <Button variant="ghost" size="sm" onClick={() => markAsRead(n.id)}>Lido</Button>}</div>
+              <div className="flex items-center gap-3">
+                {!n.read && <div className="w-2 h-2 rounded-full bg-accent" />}
+                <div>
+                  <p className="text-sm font-medium">{n.titulo}</p>
+                  <p className="text-xs text-muted-foreground">{n.mensagem}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{n.time}</span>
+                {!n.read && (
+                  <Button variant="ghost" size="sm" onClick={() => markAsRead(n.id)}>Marcar como lida</Button>
+                )}
+              </div>
             </div>
-          ))}</div>
+          ))}
+        </div>
       )}
     </div>
   );

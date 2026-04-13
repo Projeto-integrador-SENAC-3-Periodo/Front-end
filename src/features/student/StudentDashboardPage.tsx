@@ -16,7 +16,24 @@ import {
 } from "lucide-react";
 import { Routes, Route } from "react-router-dom";
 import { toast } from "sonner";
-import { proofsApi, activitiesApi, type ApiActivity } from "@/services/api";
+import {
+  proofsApi,
+  activitiesApi,
+  coursesApi,
+  pontuacaoApi,
+  notificacoesApi,
+  type ApiActivity,
+  type ApiCertificate,
+  certificadosApi,
+  userCursoApi,
+  ApiNotification,
+} from "@/services/api";
+
+function uiActivityStatus(s?: string): "pending" | "approved" | "rejected" {
+  if (s === "APROVADO") return "approved";
+  if (s === "REPROVADO") return "rejected";
+  return "pending";
+}
 
 // ─── Nav Items (Sidebar) ─────────────────────────────────────────
 const navItems: NavItem[] = [
@@ -61,33 +78,64 @@ function BottomNav() {
 
 // ─── Dashboard ───────────────────────────────────────────────────
 function StudentDashboard() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  useEffect(() => { setTimeout(() => setLoading(false), 500); }, []);
+  const [pontos, setPontos] = useState(0);
+  const [concluidas, setConcluidas] = useState(0);
+  const [pendentes, setPendentes] = useState(0);
+  const [recent, setRecent] = useState<ApiActivity[]>([]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [p, acts] = await Promise.all([
+          pontuacaoApi.get(user.id),
+          activitiesApi.listByStudent(user.id),
+        ]);
+        if (cancelled) return;
+        setPontos(p.totalPontos);
+        setConcluidas(p.atividadesConcluidas);
+        setPendentes(acts.filter((a) => a.backendStatus === "PENDENTE").length);
+        setRecent(acts.slice(0, 5));
+      } catch {
+        toast.error("Erro ao carregar dados");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
   if (loading) return <CardSkeleton count={3} />;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MetricCard title="Pontuação Total" value={45} icon={Trophy} variant="accent" />
-        <MetricCard title="Atividades Concluídas" value={3} icon={ClipboardList} />
-        <MetricCard title="Atividades Pendentes" value={2} icon={ClipboardList} />
+        <MetricCard title="Pontuação total" value={pontos} icon={Trophy} variant="accent" />
+        <MetricCard title="Atividades concluídas" value={concluidas} icon={ClipboardList} />
+        <MetricCard title="Atividades pendentes" value={pendentes} icon={ClipboardList} />
       </div>
       <div className="bg-card border rounded-md p-5">
-        <h3 className="font-display font-semibold mb-3">Últimas Atividades</h3>
+        <h3 className="font-display font-semibold mb-3">Últimas atividades</h3>
         <div className="space-y-3">
-          {[
-            { title: "Palestra de IA", status: "approved" as const, points: 10 },
-            { title: "Workshop React", status: "pending" as const, points: 20 },
-            { title: "Seminário UX", status: "rejected" as const, points: 15 },
-          ].map((a, i) => (
-            <div key={i} className="flex items-center justify-between py-2 border-b last:border-0">
-              <div>
-                <p className="text-sm font-medium">{a.title}</p>
-                <p className="text-xs text-muted-foreground">{a.points} pontos</p>
+          {recent.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhuma atividade ainda.</p>
+          ) : (
+            recent.map((a) => (
+              <div key={a.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div>
+                  <p className="text-sm font-medium">{a.title}</p>
+                  <p className="text-xs text-muted-foreground">{a.points} pontos</p>
+                </div>
+                <StatusBadge status={uiActivityStatus(a.backendStatus)} />
               </div>
-              <StatusBadge status={a.status} />
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -96,29 +144,32 @@ function StudentDashboard() {
 
 // ─── Courses ─────────────────────────────────────────────────────
 function StudentCourses() {
-  const courses = [
-    { name: "Desenvolvimento Web", hours: "120h", progress: "60%" },
-    { name: "Análise de Dados", hours: "80h", progress: "30%" },
-  ];
+  const { user } = useAuth();
+  const [courses, setCourses] = useState<{ id: string; nome: string; hours: string; dataMatricula: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    userCursoApi
+      .listarCursosDoAluno(user.id)
+      .then(setCourses)
+      .catch(() => toast.error("Erro ao carregar seus cursos"))
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  if (loading) return <CardSkeleton count={2} />;
+
   return (
     <div className="space-y-4">
       <h2 className="font-display font-semibold text-lg">Meus Cursos</h2>
       {courses.length === 0 ? (
-        <EmptyState title="Nenhum curso" description="Você ainda não está vinculado a nenhum curso." />
+        <EmptyState title="Nenhum curso" description="Você ainda não foi vinculado a nenhum curso. Aguarde seu coordenador." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {courses.map((c, i) => (
-            <div key={i} className="bg-card border rounded-md p-5">
-              <h3 className="font-display font-semibold">{c.name}</h3>
-              <p className="text-sm text-muted-foreground mt-1">Carga horária: {c.hours}</p>
-              <div className="mt-3">
-                <div className="flex justify-between text-xs mb-1">
-                  <span>Progresso</span><span className="font-medium">{c.progress}</span>
-                </div>
-                <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-accent rounded-full transition-all" style={{ width: c.progress }} />
-                </div>
-              </div>
+          {courses.map((c) => (
+            <div key={c.id} className="bg-card border rounded-md p-5">
+              <h3 className="font-display font-semibold">{c.nome}</h3>
+              <p className="text-xs text-muted-foreground mt-2">Matriculado em: {c.dataMatricula}</p>
             </div>
           ))}
         </div>
@@ -126,46 +177,67 @@ function StudentCourses() {
     </div>
   );
 }
-
 // ─── Activities ──────────────────────────────────────────────────
-const myActivities = [
-  { id: "1", title: "Palestra de IA", description: "Palestra sobre inteligência artificial", points: 10, proofType: "Certificado", status: "approved" as const },
-  { id: "2", title: "Workshop React", description: "Workshop prático de React", points: 20, proofType: "Foto", status: "pending" as const },
-  { id: "3", title: "Seminário UX", description: "Seminário sobre UX Design", points: 15, proofType: "Documento", status: "rejected" as const },
-  { id: "4", title: "Hackathon 2024", description: "Competição de programação", points: 30, proofType: "Certificado", status: "pending" as const },
-];
-
 function StudentActivities() {
+  const { user } = useAuth();
+  const [list, setList] = useState<ApiActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    try {
+      const cursos = await userCursoApi.listarCursosDoAluno(user.id);
+      const porCurso = await Promise.all(
+        cursos.map((c) => activitiesApi.listByCourse(c.id).catch(() => []))
+      );  
+      setList(porCurso.flat());
+    } catch {
+      toast.error("Erro ao carregar atividades");
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <CardSkeleton count={2} />;
+
   return (
     <div className="space-y-4">
-      <h2 className="font-display font-semibold text-lg">Minhas Atividades</h2>
-      {myActivities.length === 0 ? (
-        <EmptyState title="Nenhuma atividade" description="Não há atividades disponíveis no momento." />
+      <h2 className="font-display font-semibold text-lg">Minhas atividades</h2>
+      {list.length === 0 ? (
+        <EmptyState title="Nenhuma atividade" description="Quando o coordenador registrar atividades para você, elas aparecerão aqui." />
       ) : (
         <div className="space-y-3">
-          {myActivities.map((a) => (
-            <div key={a.id} className="bg-card border rounded-md p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="font-medium">{a.title}</h3>
-                <p className="text-sm text-muted-foreground">{a.description}</p>
-                <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
-                  <span>{a.points} pontos</span>
-                  <span>•</span>
-                  <span>{a.proofType}</span>
+          {list.map((a) => {
+            const st = uiActivityStatus(a.backendStatus);
+            return (
+              <div key={a.id} className="bg-card border rounded-md p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-medium">{a.title}</h3>
+                  <p className="text-sm text-muted-foreground">{a.description}</p>
+                  <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
+                    <span>{a.points} pontos</span>
+                    <span>•</span>
+                    <span>{a.courseName}</span>
+                    <span>•</span>
+                    <span>{a.category}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={st} />
+                  {st !== "approved" && (
+                    <Link to="/student/submit">
+                      <Button size="sm" variant="outline" className="gap-1 text-xs">
+                        <Upload className="h-3 w-3" /> Enviar
+                      </Button>
+                    </Link>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <StatusBadge status={a.status} />
-                {a.status !== "approved" && (
-                  <Link to="/student/submit">
-                    <Button size="sm" variant="outline" className="gap-1 text-xs">
-                      <Upload className="h-3 w-3" /> Enviar
-                    </Button>
-                  </Link>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -174,36 +246,50 @@ function StudentActivities() {
 
 // ─── Submit Proof ────────────────────────────────────────────────
 function StudentSubmitProof() {
+  const { user } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState("");
-  const [fileName, setFileName] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [options, setOptions] = useState<ApiActivity[]>([]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+      userCursoApi.listarCursosDoAluno(user.id)
+      .then((cursos) => Promise.all(cursos.map((c) => activitiesApi.listByCourse(c.id).catch(() => []))))
+      .then((porCurso) => setOptions(porCurso.flat()))
+      .catch(() => toast.error("Erro ao carregar atividades"));
+  }, [user?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user?.id || !selectedActivity || !file) return;
     setSubmitting(true);
-    await proofsApi.submit({
-      studentId: "3",
-      studentName: "João Pedro",
-      activityId: selectedActivity,
-      activityTitle: myActivities.find(a => a.id === selectedActivity)?.title || "",
-      fileName,
-    });
-    setSubmitting(false);
-    toast.success("Comprovante enviado com sucesso!");
-    setSelectedActivity("");
-    setFileName("");
+    try {
+      await proofsApi.submit({
+        atividadeId: selectedActivity,
+        idAluno: user.id,
+        file,
+      });
+      toast.success("Comprovante enviado com sucesso!");
+      setSelectedActivity("");
+      setFile(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha no envio");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
-      <h2 className="font-display font-semibold text-lg">Enviar Comprovante</h2>
+      <h2 className="font-display font-semibold text-lg">Enviar comprovante</h2>
       <form onSubmit={handleSubmit} className="bg-card border rounded-md p-5 space-y-4">
         <div className="space-y-2">
           <Label>Atividade</Label>
           <Select value={selectedActivity} onValueChange={setSelectedActivity}>
             <SelectTrigger><SelectValue placeholder="Selecione a atividade" /></SelectTrigger>
             <SelectContent>
-              {myActivities.filter(a => a.status !== "approved").map(a => (
+              {options.map((a) => (
                 <SelectItem key={a.id} value={a.id}>{a.title}</SelectItem>
               ))}
             </SelectContent>
@@ -211,17 +297,23 @@ function StudentSubmitProof() {
         </div>
         <div className="space-y-2">
           <Label>Arquivo</Label>
-          <Input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setFileName(e.target.files?.[0]?.name || "")} />
-          <p className="text-xs text-muted-foreground">Aceito: PDF, JPG, PNG (máx. 5MB)</p>
+          <Input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,image/*"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Aceito: PDF, JPG, PNG — no celular você pode tirar foto diretamente
+          </p>
         </div>
-        <Button type="submit" className="w-full gap-2" disabled={submitting || !selectedActivity}>
+        <Button type="submit" className="w-full gap-2" disabled={submitting || !selectedActivity || !file}>
           {submitting ? (
             <span className="flex items-center gap-2">
               <span className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
               Enviando...
             </span>
           ) : (
-            <><Upload className="h-4 w-4" /> Enviar Comprovante</>
+            <><Upload className="h-4 w-4" /> Enviar comprovante</>
           )}
         </Button>
       </form>
@@ -231,61 +323,77 @@ function StudentSubmitProof() {
 
 // ─── Score ────────────────────────────────────────────────────────
 function StudentScore() {
-  const ranking = [
-    { pos: 1, name: "Ana Silva", points: 85 },
-    { pos: 2, name: "Pedro Santos", points: 60 },
-    { pos: 3, name: "João Pedro", points: 45 },
-    { pos: 4, name: "Lucas Oliveira", points: 30 },
-  ];
+  const { user } = useAuth();
+  const [total, setTotal] = useState(0);
+  const [concluidas, setConcluidas] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    pontuacaoApi
+      .get(user.id)
+      .then((p) => {
+        setTotal(p.totalPontos);
+        setConcluidas(p.atividadesConcluidas);
+      })
+      .catch(() => toast.error("Erro ao carregar pontuação"))
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  if (loading) return <CardSkeleton count={3} />;
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MetricCard title="Pontos Acumulados" value={45} icon={Trophy} variant="accent" />
-        <MetricCard title="Atividades Concluídas" value={3} icon={Check} />
-        <MetricCard title="Posição no Ranking" value="3º" icon={Trophy} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <MetricCard title="Pontos acumulados" value={total} icon={Trophy} variant="accent" />
+        <MetricCard title="Atividades concluídas" value={concluidas} icon={Check} />
       </div>
-      <div className="bg-card border rounded-md p-5">
-        <h3 className="font-display font-semibold mb-3">Ranking</h3>
-        <div className="space-y-2">
-          {ranking.map((r) => (
-            <div key={r.pos} className={`flex items-center justify-between p-3 rounded-md ${r.name === "João Pedro" ? "bg-primary/5 border border-primary/20" : ""}`}>
-              <div className="flex items-center gap-3">
-                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${r.pos <= 3 ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground"}`}>
-                  {r.pos}
-                </span>
-                <span className="text-sm font-medium">{r.name}</span>
-              </div>
-              <span className="text-sm font-display font-bold">{r.points} pts</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <p className="text-sm text-muted-foreground">Ranking geral depende de endpoint no servidor; aqui mostramos apenas os seus dados.</p>
     </div>
   );
 }
 
 // ─── Certificates ────────────────────────────────────────────────
 function StudentCertificates() {
-  const certs = [
-    { activity: "Palestra de IA", date: "2024-03-15" },
-    { activity: "Curso Online Python", date: "2024-02-20" },
-  ];
+  const { user } = useAuth();
+  const [certs, setCerts] = useState<ApiCertificate[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.id) { setLoading(false); return; }
+      certificadosApi
+      .listByAluno(user.id)
+      .then((list) => setCerts(list))
+      .catch(() => toast.error("Erro ao carregar certificados"))
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  if (loading) return <CardSkeleton count={2} />;
+
   return (
     <div className="space-y-4">
       <h2 className="font-display font-semibold text-lg">Certificados</h2>
       {certs.length === 0 ? (
-        <EmptyState title="Nenhum certificado" description="Certificados serão gerados após aprovação." />
+        <EmptyState
+          title="Nenhum certificado"
+          description="Após a aprovação de uma atividade, o certificado aparece aqui."
+        />
       ) : (
         <div className="space-y-3">
-          {certs.map((c, i) => (
-            <div key={i} className="bg-card border rounded-md p-4 flex items-center justify-between">
+          {certs.map((c) => (
+            <div key={c.id} className="bg-card border rounded-md p-4 flex items-center justify-between">
               <div>
-                <p className="font-medium">{c.activity}</p>
+                <p className="font-medium">{c.activityTitle}</p>
                 <p className="text-xs text-muted-foreground">{c.date}</p>
               </div>
-              <Button variant="outline" size="sm" className="gap-1">
-                <Download className="h-3 w-3" /> Baixar
-              </Button>
+              <a href={c.downloadUrl} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm" className="gap-1">
+                  <Download className="h-3 w-3" /> Baixar
+                </Button>
+              </a>
             </div>
           ))}
         </div>
@@ -296,16 +404,33 @@ function StudentCertificates() {
 
 // ─── Notifications ───────────────────────────────────────────────
 function StudentNotifications() {
-  const [notifications, setNotifications] = useState([
-    { id: 1, msg: "Sua atividade 'Palestra de IA' foi aprovada!", type: "approved", read: false },
-    { id: 2, msg: "Comprovante do 'Seminário UX' foi rejeitado", type: "rejected", read: false },
-    { id: 3, msg: "Nova atividade disponível: Hackathon 2024", type: "new", read: true },
-  ]);
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<ApiNotification[]>([])
+  const [loading, setLoading] = useState(true);
 
-  const markAsRead = (id: number) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    toast.success("Notificação marcada como lida");
+  useEffect(() => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    notificacoesApi
+      .list(user.id)
+      .then((list) => setNotifications(list))
+      .catch(() => toast.error("Erro ao carregar notificações"))
+      .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  const markAsRead = async (id: number) => {
+    try {
+      await notificacoesApi.marcarLida(id);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      toast.success("Notificação marcada como lida");
+    } catch {
+      toast.error("Não foi possível atualizar");
+    }
   };
+
+  if (loading) return <CardSkeleton count={2} />;
 
   return (
     <div className="space-y-4">
@@ -318,7 +443,10 @@ function StudentNotifications() {
             <div key={n.id} className={`flex items-center justify-between p-4 ${!n.read ? "bg-primary/5" : ""}`}>
               <div className="flex items-center gap-3">
                 {!n.read && <div className="w-2 h-2 rounded-full bg-accent shrink-0" />}
-                <span className="text-sm">{n.msg}</span>
+                <div>
+                  <p className="text-sm font-medium">{n.titulo}</p>
+                  <p className="text-xs text-muted-foreground">{n.mensagem}</p>
+                </div>
               </div>
               {!n.read && (
                 <Button variant="ghost" size="sm" className="text-xs" onClick={() => markAsRead(n.id)}>
@@ -339,6 +467,12 @@ function StudentProfile() {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
   const [password, setPassword] = useState("");
+  const [pontos, setPontos] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    pontuacaoApi.get(user.id).then((p) => setPontos(p.totalPontos)).catch(() => setPontos(null));
+  }, [user?.id]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -381,8 +515,7 @@ function StudentProfile() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-4 pt-4 border-t text-sm">
-              <div><p className="text-muted-foreground">Curso</p><p className="font-medium">ADS</p></div>
-              <div><p className="text-muted-foreground">Pontuação</p><p className="font-medium">45 pontos</p></div>
+              <div><p className="text-muted-foreground">Pontuação</p><p className="font-medium">{pontos != null ? `${pontos} pts` : "—"}</p></div>
             </div>
             <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>
           </>
