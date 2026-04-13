@@ -1,16 +1,9 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+//Importa um componente do React Router que serve para redirecionar o usuário.
+import { Navigate } from "react-router-dom";
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
-  return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
-    </div>
-  );
-};
+//Navigate é o componente que muda a rota automaticamente e ele atualmente está indo para o login
+// O replace substitui a rota atual no histórico
+const Index = () => <Navigate to="/login" replace />;
 
-const Index = PlaceholderIndex;
-
+//Permite que esse componente seja usado na sua rota "/""
 export default Index;
