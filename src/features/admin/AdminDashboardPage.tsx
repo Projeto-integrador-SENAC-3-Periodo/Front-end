@@ -178,19 +178,34 @@ function AdminUsers() {
         await usersApi.update(editingUser.id, {
           name: formData.name,
           email: formData.email,
-          profile: profileLabel,
-          role: selectedProfile as ApiUser["role"],
+          role:
+            selectedProfile === "admin"
+              ? "admin"
+              : selectedProfile === "coordinator"
+              ? "coordinator"
+              : "student",
           matricula: selectedProfile === "student" ? formData.matricula : "-",
-        });
+    });
         toast.success("Usuário atualizado!");
       } else {
+        const mapPerfil = (role: string) => {
+          switch (role) {
+            case "admin":
+              return "ADMINISTRADOR";
+            case "coordinator":
+              return "COORDENADOR";
+            case "student":
+              return "ALUNO";
+          }
+        };
+
         await usersApi.create({
-          name: formData.name,
+          nome: formData.name,
           email: formData.email,
-          profile: profileLabel,
-          role: selectedProfile as ApiUser["role"],
-          matricula: selectedProfile === "student" ? formData.matricula : "-",
-        });
+          perfil: selectedProfile === "admin" ? "ADMINISTRADOR" : selectedProfile === "coordinator" ? "COORDENADOR" : "ALUNO",
+          matricula: selectedProfile === "student" ? formData.matricula : null,
+});
+toast.success("Usuário criado! As credenciais foram enviadas por e-mail.");
         toast.success("Usuário criado! As credenciais foram enviadas por e-mail.");
       }
       setModalOpen(false);

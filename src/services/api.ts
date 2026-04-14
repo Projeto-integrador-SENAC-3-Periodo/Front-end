@@ -182,38 +182,29 @@ export const usersApi = {
     }));
   },
 
-  create: async (
-    data: Omit<ApiUser, "id" | "createdAt">
-  ): Promise<ApiUser> => {
-    const perfil =
-      data.role === "admin"
-        ? "ADMINISTRADOR"
-        : data.role === "coordinator"
-          ? "COORDENADOR"
-          : "ALUNO";
-    const body: Record<string, unknown> = {
-      nome: data.name,
-      email: data.email,
-      senha: Math.random().toString(36).slice(-8).toUpperCase() + "1a!",
-      perfil,
-    };
-    if (perfil === "ALUNO") {
-      body.matricula = data.matricula === "-" ? "" : data.matricula;
-    }
-    await apiFetch<string>("/usuarios/cadastro", { method: "POST", body: JSON.stringify(body) });
-    const list = await usersApi.list();
-    const found = list.find((x) => x.email === data.email);
-    if (found) return found;
-    return {
-      id: "",
-      name: data.name,
-      email: data.email,
-      profile: data.profile,
-      role: data.role,
-      matricula: data.matricula,
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-  },
+  create: async (data: {
+  nome: string;
+  email: string;
+  perfil: "ADMINISTRADOR" | "COORDENADOR" | "ALUNO";
+  matricula?: string | null;
+}): Promise<ApiUser> => {
+  await apiFetch<string>("/usuarios/cadastro", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const list = await usersApi.list();
+  const found = list.find((x) => x.email === data.email);
+  if (found) return found;
+  return {
+    id: "",
+    name: data.nome,
+    email: data.email,
+    profile: data.perfil === "ADMINISTRADOR" ? "Administrador" : data.perfil === "COORDENADOR" ? "Coordenador" : "Aluno",
+    role: data.perfil === "ADMINISTRADOR" ? "admin" : data.perfil === "COORDENADOR" ? "coordinator" : "student",
+    matricula: data.matricula ?? "-",
+    createdAt: "-",
+  };
+},
 
   update: async (id: string, data: Partial<ApiUser>): Promise<ApiUser> => {
     const perfil =
