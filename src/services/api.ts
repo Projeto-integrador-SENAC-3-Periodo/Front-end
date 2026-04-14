@@ -1,6 +1,6 @@
 import type { UserRole } from "@/contexts/AuthContext";
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8081";
+const BASE_URL = import.meta.env.VITE_API_URL;
 
 function getToken(): string | null {
   return localStorage.getItem("senac_token");
@@ -8,7 +8,7 @@ function getToken(): string | null {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const isForm = init?.body instanceof FormData;
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: {
       ...(isForm ? {} : { "Content-Type": "application/json" }),
