@@ -548,6 +548,16 @@ export const categoriaAtividadeApi = {
   },
 };
 
+// ─── Auth API (alterar senha) ────────────────────────────────────
+export const authApi = {
+  changePassword: async (senhaAtual: string, novaSenha: string, confirmacaoNovaSenha: string): Promise<void> => {
+    await apiFetch<string>("/auth/alterar-senha", {
+      method: "PUT",
+      body: JSON.stringify({ senhaAtual, novaSenha, confirmacaoNovaSenha }),
+    });
+  },
+};
+
 // ─── Vínculo aluno–curso ─────────────────────────────────────────
 export const userCursoApi = {
   vincular: async (cursoId: string, idUser: string): Promise<void> => {
@@ -556,6 +566,16 @@ export const userCursoApi = {
       body: JSON.stringify({
         idUser: Number(idUser),
         papel: "ALUNO",
+      }),
+    });
+  },
+
+  vincularCoordenador: async (cursoId: string, idUser: string): Promise<void> => {
+    await apiFetch(`/cursos/${cursoId}/alunos`, {
+      method: "POST",
+      body: JSON.stringify({
+        idUser: Number(idUser),
+        papel: "COORDENADOR",
       }),
     });
   },

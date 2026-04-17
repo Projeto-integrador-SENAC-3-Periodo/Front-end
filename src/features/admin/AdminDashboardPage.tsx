@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  LayoutDashboard, Users, BookOpen, ClipboardList, Bell, FileText, Plus, Pencil, Trash2, User,
+  LayoutDashboard, Users, BookOpen, ClipboardList, Bell, FileText, Plus, Pencil, Trash2, User, Link2,
 } from "lucide-react";
 import { Routes, Route, useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -28,6 +28,7 @@ import {
   tiposAtividadeApi,
   notificacoesApi,
   categoriaAtividadeApi,
+  userCursoApi,
   type ApiUser,
   type ApiCourse,
   type ApiActivity,
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
   { label: "Dashboard", path: "/admin", icon: LayoutDashboard },
   { label: "Usuários", path: "/admin/users", icon: Users },
   { label: "Cursos", path: "/admin/courses", icon: BookOpen },
+  { label: "Vínculos", path: "/admin/vinculos", icon: Link2 },
   { label: "Atividades", path: "/admin/activities", icon: ClipboardList },
   { label: "Notificações", path: "/admin/notifications", icon: Bell },
   { label: "Logs", path: "/admin/logs", icon: FileText },
@@ -647,19 +649,227 @@ function AdminLogs() {
   );
 }
 
+// ─── Vínculos (Coordenador ↔ Curso) ─────────────────────────────
+interface VinculoRow {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  cursoId: string;
+  cursoName: string;
+  papel: string;
+  dataMatricula: string;
+}
+
+function AdminVinculos() {
+  const [vinculos, setVinculos] = useState<VinculoRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [coordenadores, setCoordenadores] = useState<ApiUser[]>([]);
+  const [cursos, setCursos] = useState<ApiCourse[]>([]);
+  const [selCoord, setSelCoord] = useState("");
+  const [selCurso, setSelCurso] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [userList, courseList] = await Promise.all([usersApi.list(), coursesApi.list()]);
+      setCoordenadores(userList.filter((u) => u.role === "coordinator"));
+      setCursos(courseList);
+
+      // Load all vinculos for all courses and filter COORDENADOR ones
+      const allVinculos = await Promise.all(
+        courseList.map(async (c) => {
+          try {
+            const raw = await userCursoApi.listarAlunos(c.id);
+            return raw.map((r) => ({ ...r, cursoId: c.id, cursoName: c.name }));
+          } catch {
+            return [];
+          }
+        })
+      );
+
+      // The listarAlunos endpoint returns all users linked to the course
+      // We need to cross-reference with coordinators to identify them
+      const coordIds = new Set(userList.filter((u) => u.role === "coordinator").map((u) => u.id));
+      const coordVinculos: VinculoRow[] = [];
+
+      for (const courseVinculos of allVinculos) {
+        for (const v of courseVinculos) {
+          if (coordIds.has(v.id)) {
+            coordVinculos.push({
+              id: `${v.id}-${v.cursoId}`,
+              userId: v.id,
+              userName: v.nome,
+              userEmail: v.email,
+              cursoId: v.cursoId,
+              cursoName: v.cursoName,
+              papel: "COORDENADOR",
+              dataMatricula: "",
+            });
+          }
+        }
+      }
+
+      setVinculos(coordVinculos);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar vínculos");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleVincular = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selCoord || !selCurso) return;
+    try {
+      await userCursoApi.vincularCoordenador(selCurso, selCoord);
+      toast.success("Coordenador vinculado ao curso!");
+      setModalOpen(false);
+      setSelCoord("");
+      setSelCurso("");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao vincular coordenador");
+    }
+  };
+
+  const handleDesvincular = async (userId: string, cursoId: string) => {
+    try {
+      await userCursoApi.desvincular(cursoId, userId);
+      toast.success("Coordenador desvinculado do curso!");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao desvincular");
+    }
+  };
+
+  const columns: Column<VinculoRow>[] = [
+    { key: "userName", header: "Coordenador" },
+    { key: "userEmail", header: "Email" },
+    { key: "cursoName", header: "Curso" },
+    {
+      key: "actions",
+      header: "Ações",
+      render: (item: VinculoRow) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive"
+          title="Desvincular coordenador"
+          onClick={() => handleDesvincular(item.userId, item.cursoId)}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-display font-semibold text-lg">Vínculos Coordenador ↔ Curso</h2>
+        <Button onClick={() => setModalOpen(true)} className="gap-2">
+          <Plus className="h-4 w-4" /> Vincular Coordenador
+        </Button>
+      </div>
+      {loading ? (
+        <TableSkeleton columns={4} />
+      ) : vinculos.length === 0 ? (
+        <EmptyState title="Nenhum vínculo" description="Vincule coordenadores aos cursos." />
+      ) : (
+        <DataTable columns={columns} data={vinculos} />
+      )}
+      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title="Vincular Coordenador ao Curso">
+        <form onSubmit={handleVincular} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Coordenador</Label>
+            <Select value={selCoord} onValueChange={setSelCoord}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o coordenador" />
+              </SelectTrigger>
+              <SelectContent>
+                {coordenadores.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.name} ({u.email})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Curso</Label>
+            <Select value={selCurso} onValueChange={setSelCurso}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o curso" />
+              </SelectTrigger>
+              <SelectContent>
+                {cursos.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={!selCoord || !selCurso}>
+              Vincular
+            </Button>
+          </div>
+        </form>
+      </ModalForm>
+    </div>
+  );
+}
+
 // ─── Profile Component (Reaproveitado do Aluno) ───────
 function AdminProfile() {
   const { user, updateProfile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
-  const [password, setPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
+  const [submittingPw, setSubmittingPw] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     updateProfile({ name });
     toast.success("Perfil atualizado!");
     setEditing(false);
-    setPassword("");
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (novaSenha !== confirmacao) {
+      toast.error("A nova senha e a confirmação não coincidem.");
+      return;
+    }
+    if (novaSenha.length < 8) {
+      toast.error("A nova senha deve ter no mínimo 8 caracteres.");
+      return;
+    }
+    setSubmittingPw(true);
+    try {
+      const { authApi } = await import("@/services/api");
+      await authApi.changePassword(senhaAtual, novaSenha, confirmacao);
+      toast.success("Senha alterada com sucesso!");
+      setChangingPassword(false);
+      setSenhaAtual("");
+      setNovaSenha("");
+      setConfirmacao("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao alterar senha");
+    } finally {
+      setSubmittingPw(false);
+    }
   };
 
   return (
@@ -679,11 +889,37 @@ function AdminProfile() {
         {editing ? (
           <form onSubmit={handleSave} className="space-y-4 pt-4 border-t">
             <div className="space-y-2"><Label>Nome</Label><Input value={name} onChange={e => setName(e.target.value)} required /></div>
-            <div className="space-y-2"><Label>Nova Senha (opcional)</Label><Input type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} /></div>
             <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancelar</Button><Button type="submit">Salvar</Button></div>
           </form>
         ) : (
-          <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>
+          <div className="space-y-3">
+            <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>
+            <Button variant="outline" onClick={() => setChangingPassword(true)} className="w-full">Alterar Senha</Button>
+          </div>
+        )}
+
+        {changingPassword && (
+          <form onSubmit={handleChangePassword} className="space-y-4 pt-4 border-t">
+            <h3 className="font-display font-semibold text-base">Alterar Senha</h3>
+            <div className="space-y-2">
+              <Label>Senha Atual</Label>
+              <Input type="password" placeholder="••••••••" required value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Nova Senha</Label>
+              <Input type="password" placeholder="Mínimo 8 caracteres" required value={novaSenha} onChange={e => setNovaSenha(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Confirmar Nova Senha</Label>
+              <Input type="password" placeholder="••••••••" required value={confirmacao} onChange={e => setConfirmacao(e.target.value)} />
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => { setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao(""); }}>Cancelar</Button>
+              <Button type="submit" disabled={submittingPw}>
+                {submittingPw ? "Salvando..." : "Alterar Senha"}
+              </Button>
+            </div>
+          </form>
         )}
       </div>
     </div>
@@ -695,6 +931,7 @@ const titleMap: Record<string, string> = {
   "/admin": "Dashboard",
   "/admin/users": "Usuários",
   "/admin/courses": "Cursos",
+  "/admin/vinculos": "Vínculos",
   "/admin/activities": "Atividades",
   "/admin/notifications": "Notificações",
   "/admin/logs": "Logs do Sistema",
@@ -713,6 +950,7 @@ export default function AdminDashboardPage() {
             <Route index element={<AdminDashboard />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="courses" element={<AdminCourses />} />
+            <Route path="vinculos" element={<AdminVinculos />} />
             <Route path="activities" element={<AdminActivities />} />
             <Route path="notifications" element={<AdminNotifications />} />
             <Route path="logs" element={<AdminLogs />} />

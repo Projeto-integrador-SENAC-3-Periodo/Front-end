@@ -23,7 +23,6 @@ import {
   coursesApi,
   activitiesApi,
   proofsApi,
-  usersApi,
   tiposAtividadeApi,
   userCursoApi,
   categoriaAtividadeApi,
@@ -214,36 +213,32 @@ function CoordCourses() {
 // ─── Students ────────────────────────────────────────────────────
 interface StudentRow { id: string; alunoId: string; cursoId: string; name: string; email: string; matricula: string; course: string }
 function CoordStudents() {
+  const { user } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [allUsers, setAllUsers] = useState<ApiUser[]>([]);
   const [courses, setCourses] = useState<ApiCourse[]>([]);
-  const [selAluno, setSelAluno] = useState("");
+  const [selAlunoId, setSelAlunoId] = useState("");
   const [selCurso, setSelCurso] = useState("");
 
   const load = useCallback(async () => {
+    if (!user?.id) return;
     setLoading(true);
     try {
-      const [courseList, userList] = await Promise.all([coursesApi.list(), usersApi.list()]);
+      const courseList = await coursesApi.listByCoordinator(user.id);
       setCourses(courseList);
-      setAllUsers(userList.filter((u) => u.role === "student"));
-      const byId = new Map(userList.map((u) => [u.id, u]));
       const parts = await Promise.all(
         courseList.map(async (c) => {
           const alunos = await userCursoApi.listarAlunos(c.id);
-          return alunos.map((a) => {
-            const u = byId.get(a.id);
-            return {
-              id: `${a.id}-${c.id}`,
-              alunoId: a.id,
-              cursoId: c.id,
-              name: a.nome,
-              email: a.email,
-              matricula: u?.matricula && u.matricula !== "-" ? u.matricula : "—",
-              course: c.name,
-            };
-          });
+          return alunos.map((a) => ({
+            id: `${a.id}-${c.id}`,
+            alunoId: a.id,
+            cursoId: c.id,
+            name: a.nome,
+            email: a.email,
+            matricula: "—",
+            course: c.name,
+          }));
         })
       );
       setStudents(parts.flat());
@@ -252,14 +247,13 @@ function CoordStudents() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => { load(); }, [load]);
 
   const columns: Column<StudentRow>[] = [
     { key: "name", header: "Nome" },
     { key: "email", header: "Email" },
-    { key: "matricula", header: "Matrícula" },
     { key: "course", header: "Curso" },
     { key: "actions", header: "Ações", render: (item: StudentRow) => (
       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Desvincular aluno"
@@ -281,12 +275,12 @@ function CoordStudents() {
 
   const vincular = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selAluno || !selCurso) return;
+    if (!selAlunoId || !selCurso) return;
     try {
-      await userCursoApi.vincular(selCurso, selAluno);
+      await userCursoApi.vincular(selCurso, selAlunoId);
       toast.success("Aluno vinculado ao curso!");
       setModalOpen(false);
-      setSelAluno("");
+      setSelAlunoId("");
       setSelCurso("");
       load();
     } catch (err) {
@@ -300,19 +294,20 @@ function CoordStudents() {
         <h2 className="font-display font-semibold text-lg">Alunos vinculados</h2>
         <Button onClick={() => setModalOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Vincular aluno</Button>
       </div>
-      {loading ? <TableSkeleton columns={4} /> : <DataTable columns={columns} data={students} />}
+      {loading ? <TableSkeleton columns={4} /> : students.length === 0 ? <EmptyState title="Nenhum aluno vinculado" description="Vincule alunos aos seus cursos." /> : <DataTable columns={columns} data={students} />}
       <ModalForm open={modalOpen} onOpenChange={setModalOpen} title="Vincular aluno ao curso">
         <form onSubmit={vincular} className="space-y-4">
           <div className="space-y-2">
-            <Label>Aluno</Label>
-            <Select value={selAluno} onValueChange={setSelAluno}>
-              <SelectTrigger><SelectValue placeholder="Selecione o aluno" /></SelectTrigger>
-              <SelectContent>
-                {allUsers.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>{u.name} ({u.email})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>ID do Aluno</Label>
+            <Input
+              placeholder="Informe o ID do aluno"
+              required
+              value={selAlunoId}
+              onChange={(e) => setSelAlunoId(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Solicite o ID do aluno ao administrador do sistema.
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Curso</Label>
@@ -327,7 +322,7 @@ function CoordStudents() {
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button type="submit">Vincular</Button>
+            <Button type="submit" disabled={!selAlunoId || !selCurso}>Vincular</Button>
           </div>
         </form>
       </ModalForm>
@@ -703,9 +698,43 @@ function CoordProfile() {
   const { user, updateProfile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
+  const [submittingPw, setSubmittingPw] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
-    e.preventDefault(); updateProfile({ name }); toast.success("Perfil atualizado!"); setEditing(false);
+    e.preventDefault();
+    updateProfile({ name });
+    toast.success("Perfil atualizado!");
+    setEditing(false);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (novaSenha !== confirmacao) {
+      toast.error("A nova senha e a confirmação não coincidem.");
+      return;
+    }
+    if (novaSenha.length < 8) {
+      toast.error("A nova senha deve ter no mínimo 8 caracteres.");
+      return;
+    }
+    setSubmittingPw(true);
+    try {
+      const { authApi } = await import("@/services/api");
+      await authApi.changePassword(senhaAtual, novaSenha, confirmacao);
+      toast.success("Senha alterada com sucesso!");
+      setChangingPassword(false);
+      setSenhaAtual("");
+      setNovaSenha("");
+      setConfirmacao("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao alterar senha");
+    } finally {
+      setSubmittingPw(false);
+    }
   };
 
   return (
@@ -721,7 +750,36 @@ function CoordProfile() {
             <div className="space-y-2"><Label>Nome</Label><Input value={name} onChange={e => setName(e.target.value)} required /></div>
             <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancelar</Button><Button type="submit">Salvar</Button></div>
           </form>
-        ) : <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>}
+        ) : (
+          <div className="space-y-3">
+            <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>
+            <Button variant="outline" onClick={() => setChangingPassword(true)} className="w-full">Alterar Senha</Button>
+          </div>
+        )}
+
+        {changingPassword && (
+          <form onSubmit={handleChangePassword} className="space-y-4 pt-4 border-t">
+            <h3 className="font-display font-semibold text-base">Alterar Senha</h3>
+            <div className="space-y-2">
+              <Label>Senha Atual</Label>
+              <Input type="password" placeholder="••••••••" required value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Nova Senha</Label>
+              <Input type="password" placeholder="Mínimo 8 caracteres" required value={novaSenha} onChange={e => setNovaSenha(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Confirmar Nova Senha</Label>
+              <Input type="password" placeholder="••••••••" required value={confirmacao} onChange={e => setConfirmacao(e.target.value)} />
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => { setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao(""); }}>Cancelar</Button>
+              <Button type="submit" disabled={submittingPw}>
+                {submittingPw ? "Salvando..." : "Alterar Senha"}
+              </Button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

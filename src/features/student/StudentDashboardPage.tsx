@@ -466,8 +466,12 @@ function StudentProfile() {
   const { user, updateProfile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
-  const [password, setPassword] = useState("");
   const [pontos, setPontos] = useState<number | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
+  const [submittingPw, setSubmittingPw] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -479,7 +483,32 @@ function StudentProfile() {
     updateProfile({ name });
     toast.success("Perfil atualizado!");
     setEditing(false);
-    setPassword("");
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (novaSenha !== confirmacao) {
+      toast.error("A nova senha e a confirmação não coincidem.");
+      return;
+    }
+    if (novaSenha.length < 8) {
+      toast.error("A nova senha deve ter no mínimo 8 caracteres.");
+      return;
+    }
+    setSubmittingPw(true);
+    try {
+      const { authApi } = await import("@/services/api");
+      await authApi.changePassword(senhaAtual, novaSenha, confirmacao);
+      toast.success("Senha alterada com sucesso!");
+      setChangingPassword(false);
+      setSenhaAtual("");
+      setNovaSenha("");
+      setConfirmacao("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao alterar senha");
+    } finally {
+      setSubmittingPw(false);
+    }
   };
 
   return (
@@ -503,10 +532,6 @@ function StudentProfile() {
               <Label>Nome</Label>
               <Input value={name} onChange={e => setName(e.target.value)} required />
             </div>
-            <div className="space-y-2">
-              <Label>Nova Senha (opcional)</Label>
-              <Input type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} />
-            </div>
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancelar</Button>
               <Button type="submit">Salvar</Button>
@@ -517,8 +542,35 @@ function StudentProfile() {
             <div className="grid grid-cols-2 gap-4 pt-4 border-t text-sm">
               <div><p className="text-muted-foreground">Pontuação</p><p className="font-medium">{pontos != null ? `${pontos} pts` : "—"}</p></div>
             </div>
-            <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>
+            <div className="space-y-3">
+              <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>
+              <Button variant="outline" onClick={() => setChangingPassword(true)} className="w-full">Alterar Senha</Button>
+            </div>
           </>
+        )}
+
+        {changingPassword && (
+          <form onSubmit={handleChangePassword} className="space-y-4 pt-4 border-t">
+            <h3 className="font-display font-semibold text-base">Alterar Senha</h3>
+            <div className="space-y-2">
+              <Label>Senha Atual</Label>
+              <Input type="password" placeholder="••••••••" required value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Nova Senha</Label>
+              <Input type="password" placeholder="Mínimo 8 caracteres" required value={novaSenha} onChange={e => setNovaSenha(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Confirmar Nova Senha</Label>
+              <Input type="password" placeholder="••••••••" required value={confirmacao} onChange={e => setConfirmacao(e.target.value)} />
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => { setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao(""); }}>Cancelar</Button>
+              <Button type="submit" disabled={submittingPw}>
+                {submittingPw ? "Salvando..." : "Alterar Senha"}
+              </Button>
+            </div>
+          </form>
         )}
       </div>
     </div>
