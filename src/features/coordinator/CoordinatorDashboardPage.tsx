@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
- LayoutDashboard, BookOpen, Users, ClipboardList, FileCheck, Award, Bell, Plus, Pencil, Trash2, Eye, Check, X, User, Download,
+  LayoutDashboard, BookOpen, Users, ClipboardList, FileCheck, Award, Bell, Plus, Pencil, Trash2, Eye, Check, X, User, Download,
 } from "lucide-react";
 import { Routes, Route, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -27,6 +27,7 @@ import {
   userCursoApi,
   categoriaAtividadeApi,
   certificadosApi,
+  usersApi,
   type ApiNotification,
   notificacoesApi,
   type ApiCourse,
@@ -87,6 +88,7 @@ function CoordDashboard() {
     if (!user?.id) return;
     coursesApi.list()
       .then(async (courses) => {
+        // FIX: Use listarAlunos which now filters only ALUNO role
         const alunosPorCurso = await Promise.all(courses.map((c) => userCursoApi.listarAlunos(c.id).catch(() => [])));
         const alunos = alunosPorCurso.flat();
         const ids = [...new Set(alunos.map((a) => a.id))];
@@ -218,6 +220,10 @@ function CoordStudents() {
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [courses, setCourses] = useState<ApiCourse[]>([]);
+
+  // FIX: Search by student name instead of ID
+  const [allStudents, setAllStudents] = useState<ApiUser[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [selAlunoId, setSelAlunoId] = useState("");
   const [selCurso, setSelCurso] = useState("");
 
@@ -229,6 +235,7 @@ function CoordStudents() {
       setCourses(courseList);
       const parts = await Promise.all(
         courseList.map(async (c) => {
+          // FIX: listarAlunos now returns only ALUNO role
           const alunos = await userCursoApi.listarAlunos(c.id);
           return alunos.map((a) => ({
             id: `${a.id}-${c.id}`,
@@ -242,6 +249,10 @@ function CoordStudents() {
         })
       );
       setStudents(parts.flat());
+
+      // Load all students for the search dropdown
+      const userList = await usersApi.list();
+      setAllStudents(userList.filter((u) => u.role === "student"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao carregar alunos");
     } finally {
@@ -250,6 +261,12 @@ function CoordStudents() {
   }, [user?.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Filter students by search term
+  const filteredStudents = allStudents.filter((s) =>
+    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    s.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const columns: Column<StudentRow>[] = [
     { key: "name", header: "Nome" },
@@ -282,6 +299,7 @@ function CoordStudents() {
       setModalOpen(false);
       setSelAlunoId("");
       setSelCurso("");
+      setSearchTerm("");
       load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao vincular");
@@ -297,17 +315,43 @@ function CoordStudents() {
       {loading ? <TableSkeleton columns={4} /> : students.length === 0 ? <EmptyState title="Nenhum aluno vinculado" description="Vincule alunos aos seus cursos." /> : <DataTable columns={columns} data={students} />}
       <ModalForm open={modalOpen} onOpenChange={setModalOpen} title="Vincular aluno ao curso">
         <form onSubmit={vincular} className="space-y-4">
+          {/* FIX: Search by student name instead of ID */}
           <div className="space-y-2">
-            <Label>ID do Aluno</Label>
+            <Label>Buscar Aluno por Nome</Label>
             <Input
-              placeholder="Informe o ID do aluno"
-              required
-              value={selAlunoId}
-              onChange={(e) => setSelAlunoId(e.target.value)}
+              placeholder="Digite o nome do aluno..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setSelAlunoId("");
+              }}
             />
-            <p className="text-xs text-muted-foreground">
-              Solicite o ID do aluno ao administrador do sistema.
-            </p>
+            {searchTerm.length >= 2 && filteredStudents.length > 0 && !selAlunoId && (
+              <div className="border rounded-md max-h-40 overflow-y-auto bg-white">
+                {filteredStudents.slice(0, 10).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm border-b last:border-0"
+                    onClick={() => {
+                      setSelAlunoId(s.id);
+                      setSearchTerm(s.name);
+                    }}
+                  >
+                    <span className="font-medium">{s.name}</span>
+                    <span className="text-muted-foreground ml-2 text-xs">({s.email})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {searchTerm.length >= 2 && filteredStudents.length === 0 && !selAlunoId && (
+              <p className="text-xs text-muted-foreground">Nenhum aluno encontrado.</p>
+            )}
+            {selAlunoId && (
+              <p className="text-xs text-green-600 font-medium">
+                ✓ Aluno selecionado: {allStudents.find((s) => s.id === selAlunoId)?.name}
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label>Curso</Label>
@@ -321,7 +365,7 @@ function CoordStudents() {
             </Select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => { setModalOpen(false); setSearchTerm(""); setSelAlunoId(""); }}>Cancelar</Button>
             <Button type="submit" disabled={!selAlunoId || !selCurso}>Vincular</Button>
           </div>
         </form>
@@ -505,6 +549,9 @@ function CoordProofs() {
   const [data, setData] = useState<ApiProof[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProof, setSelectedProof] = useState<ApiProof | null>(null);
+  // FIX: Add feedback state for rejection
+  const [rejectFeedback, setRejectFeedback] = useState("");
+  const [showRejectForm, setShowRejectForm] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -525,6 +572,8 @@ function CoordProofs() {
       await proofsApi.approve(selectedProof.id);
       toast.success("Comprovante aprovado!");
       setSelectedProof(null);
+      setShowRejectForm(false);
+      setRejectFeedback("");
       load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao aprovar");
@@ -533,10 +582,17 @@ function CoordProofs() {
 
   const handleReject = async () => {
     if (!selectedProof) return;
+    // FIX: Require feedback before rejecting
+    if (!rejectFeedback.trim()) {
+      toast.error("Por favor, informe o motivo da rejeição para que o aluno saiba o que corrigir.");
+      return;
+    }
     try {
-      await proofsApi.reject(selectedProof.id);
-      toast.error("Comprovante rejeitado");
+      await proofsApi.reject(selectedProof.id, rejectFeedback.trim());
+      toast.success("Comprovante rejeitado com feedback enviado ao aluno.");
       setSelectedProof(null);
+      setShowRejectForm(false);
+      setRejectFeedback("");
       load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao rejeitar");
@@ -546,14 +602,14 @@ function CoordProofs() {
   const columns: Column<ApiProof>[] = [
     { key: "studentName", header: "Aluno" }, { key: "activityTitle", header: "Atividade" }, { key: "date", header: "Data Envio" },
     { key: "status", header: "Status", render: (item) => <StatusBadge status={item.status} /> },
-    { key: "actions", header: "Ações", render: (item) => <Button variant="ghost" size="icon" onClick={() => setSelectedProof(item)}><Eye className="h-4 w-4" /></Button> },
+    { key: "actions", header: "Ações", render: (item) => <Button variant="ghost" size="icon" onClick={() => { setSelectedProof(item); setShowRejectForm(false); setRejectFeedback(""); }}><Eye className="h-4 w-4" /></Button> },
   ];
 
   return (
     <div className="space-y-4">
       <h2 className="font-display font-semibold text-lg">Comprovações</h2>
       {loading ? <TableSkeleton columns={5} /> : data.length === 0 ? <EmptyState title="Nenhuma comprovação" /> : <DataTable columns={columns} data={data} />}
-      <ModalForm open={!!selectedProof} onOpenChange={() => setSelectedProof(null)} title="Avaliar Comprovante">
+      <ModalForm open={!!selectedProof} onOpenChange={() => { setSelectedProof(null); setShowRejectForm(false); setRejectFeedback(""); }} title="Avaliar Comprovante">
         {selectedProof && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -562,11 +618,42 @@ function CoordProofs() {
               <div><p className="text-muted-foreground">Data</p><p className="font-medium">{selectedProof.date}</p></div>
               <div><p className="text-muted-foreground">Status</p><StatusBadge status={selectedProof.status} /></div>
             </div>
+            {selectedProof.observacao && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 text-sm">
+                <p className="text-muted-foreground font-medium mb-1">Feedback anterior:</p>
+                <p>{selectedProof.observacao}</p>
+              </div>
+            )}
             <div className="bg-muted rounded-md p-8 text-center text-sm text-muted-foreground">[Visualização do documento]</div>
             {selectedProof.status === "pending" && (
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" className="text-destructive" onClick={handleReject}><X className="h-4 w-4" /> Rejeitar</Button>
-                <Button onClick={handleApprove}><Check className="h-4 w-4" /> Aprovar</Button>
+              <div className="space-y-3">
+                {/* FIX: Show reject form with feedback textarea */}
+                {showRejectForm ? (
+                  <div className="space-y-3 border rounded-md p-4 bg-red-50">
+                    <Label className="text-destructive font-medium">Motivo da rejeição (obrigatório)</Label>
+                    <Textarea
+                      placeholder="Explique ao aluno o motivo da rejeição para que ele possa corrigir e reenviar..."
+                      value={rejectFeedback}
+                      onChange={(e) => setRejectFeedback(e.target.value)}
+                      className="min-h-[80px]"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => { setShowRejectForm(false); setRejectFeedback(""); }}>Cancelar</Button>
+                      <Button variant="destructive" size="sm" onClick={handleReject} disabled={!rejectFeedback.trim()}>
+                        <X className="h-4 w-4 mr-1" /> Confirmar Rejeição
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" className="text-destructive" onClick={() => setShowRejectForm(true)}>
+                      <X className="h-4 w-4 mr-1" /> Rejeitar
+                    </Button>
+                    <Button onClick={handleApprove}>
+                      <Check className="h-4 w-4 mr-1" /> Aprovar
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -585,7 +672,6 @@ function CoordCertificates() {
 
   useEffect(() => {
     if (!user?.id) { setLoading(false); return; }
-    // Busca todos os alunos dos cursos do coord, depois os certificados de cada um
     coursesApi.list()
       .then((courses) =>
         Promise.all(courses.map((c) => userCursoApi.listarAlunos(c.id)))

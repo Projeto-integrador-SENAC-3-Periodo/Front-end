@@ -174,7 +174,6 @@ function AdminUsers() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const profileLabel = selectedProfile === "admin" ? "Administrador" : selectedProfile === "coordinator" ? "Coordenador" : "Aluno";
     try {
       if (editingUser) {
         await usersApi.update(editingUser.id, {
@@ -187,27 +186,15 @@ function AdminUsers() {
               ? "coordinator"
               : "student",
           matricula: selectedProfile === "student" ? formData.matricula : "-",
-    });
+        });
         toast.success("Usuário atualizado!");
       } else {
-        const mapPerfil = (role: string) => {
-          switch (role) {
-            case "admin":
-              return "ADMINISTRADOR";
-            case "coordinator":
-              return "COORDENADOR";
-            case "student":
-              return "ALUNO";
-          }
-        };
-
         await usersApi.create({
           nome: formData.name,
           email: formData.email,
           perfil: selectedProfile === "admin" ? "ADMINISTRADOR" : selectedProfile === "coordinator" ? "COORDENADOR" : "ALUNO",
           matricula: selectedProfile === "student" ? formData.matricula : null,
-});
-toast.success("Usuário criado! As credenciais foram enviadas por e-mail.");
+        });
         toast.success("Usuário criado! As credenciais foram enviadas por e-mail.");
       }
       setModalOpen(false);
@@ -260,8 +247,8 @@ toast.success("Usuário criado! As credenciais foram enviadas por e-mail.");
           <div className="space-y-2"><Label>Nome</Label><Input placeholder="Nome completo" required value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} /></div>
           <div className="space-y-2"><Label>Email</Label><Input type="email" placeholder="email@senac.br" required value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} /></div>
           <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded p-2">
-  ℹ              Uma senha provisória será gerada automaticamente e enviada por e-mail ao usuário.
-         </p>
+            ℹ Uma senha provisória será gerada automaticamente e enviada por e-mail ao usuário.
+          </p>
           <div className="space-y-2">
             <Label>Perfil</Label>
             <Select value={selectedProfile} onValueChange={(v: string) => setSelectedProfile(v)} required>
@@ -300,6 +287,7 @@ function AdminCourses() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // FIX: coursesApi.list() now enriches with coordinator name
       setData(await coursesApi.list());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao carregar cursos");
@@ -432,7 +420,7 @@ function AdminActivities() {
 
   const openCreate = () => {
     setEditing(null);
-   setFormData({ title: "", description: "", courseId: "", tipoAtividadeId: "", categoriaId: "", points: "", horas: "" });
+    setFormData({ title: "", description: "", courseId: "", tipoAtividadeId: "", categoriaId: "", points: "", horas: "" });
     setModalOpen(true);
   };
 
@@ -522,9 +510,9 @@ function AdminActivities() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2"><Label>Título</Label><Input placeholder="Título" required value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} /></div>
           <div className="space-y-2"><Label>Descrição</Label><Textarea placeholder="Descrição" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
-       <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded p-2">
-          O aluno seleciona esta atividade ao enviar o comprovante. Aqui você cadastra o modelo disponível para o curso.
-        </p>
+          <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded p-2">
+            O aluno seleciona esta atividade ao enviar o comprovante. Aqui você cadastra o modelo disponível para o curso.
+          </p>
           <div className="space-y-2">
             <Label>Curso</Label>
             <Select value={formData.courseId} onValueChange={(v: string) => setFormData(p => ({ ...p, courseId: v }))}>
@@ -677,11 +665,11 @@ function AdminVinculos() {
       setCoordenadores(userList.filter((u) => u.role === "coordinator"));
       setCursos(courseList);
 
-      // Load all vinculos for all courses and filter COORDENADOR ones
+      // FIX: Use listarTodos to get all vinculos, then filter by COORDENADOR role
       const allVinculos = await Promise.all(
         courseList.map(async (c) => {
           try {
-            const raw = await userCursoApi.listarAlunos(c.id);
+            const raw = await userCursoApi.listarTodos(c.id);
             return raw.map((r) => ({ ...r, cursoId: c.id, cursoName: c.name }));
           } catch {
             return [];
@@ -689,14 +677,12 @@ function AdminVinculos() {
         })
       );
 
-      // The listarAlunos endpoint returns all users linked to the course
-      // We need to cross-reference with coordinators to identify them
-      const coordIds = new Set(userList.filter((u) => u.role === "coordinator").map((u) => u.id));
       const coordVinculos: VinculoRow[] = [];
 
       for (const courseVinculos of allVinculos) {
         for (const v of courseVinculos) {
-          if (coordIds.has(v.id)) {
+          // FIX: Filter by papel field from the backend response instead of cross-referencing
+          if (v.papel === "COORDENADOR") {
             coordVinculos.push({
               id: `${v.id}-${v.cursoId}`,
               userId: v.id,
@@ -730,6 +716,7 @@ function AdminVinculos() {
       setModalOpen(false);
       setSelCoord("");
       setSelCurso("");
+      // FIX: Reload vinculos AND courses so the Cursos tab updates too
       load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao vincular coordenador");
@@ -828,7 +815,7 @@ function AdminVinculos() {
   );
 }
 
-// ─── Profile Component (Reaproveitado do Aluno) ───────
+// ─── Profile Component ───────────
 function AdminProfile() {
   const { user, updateProfile } = useAuth();
   const [editing, setEditing] = useState(false);

@@ -75,6 +75,7 @@ export interface ApiProof {
   date: string;
   status: "pending" | "approved" | "rejected";
   fileName?: string;
+  observacao?: string;
 }
 
 export interface ApiNotification {
@@ -110,6 +111,16 @@ export interface PontuacaoAluno {
   atividadesConcluidas: number;
 }
 
+/** Raw vinculo returned by the backend */
+export interface UserCursoVinculo {
+  id: string;
+  nome: string;
+  email: string;
+  idCurso: string;
+  nomeCurso: string;
+  papel: string;
+}
+
 function mapPerfilToRole(perfil: string): UserRole {
   if (perfil === "ADMINISTRADOR") return "admin";
   if (perfil === "COORDENADOR") return "coordinator";
@@ -127,7 +138,7 @@ function parseHorasToInt(hours: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function mapAtividadeStatus(s: string | undefined): ApiActivity["proofType"] {
+function mapAtividadeStatus(_s: string | undefined): ApiActivity["proofType"] {
   return "document";
 }
 
@@ -183,28 +194,28 @@ export const usersApi = {
   },
 
   create: async (data: {
-  nome: string;
-  email: string;
-  perfil: "ADMINISTRADOR" | "COORDENADOR" | "ALUNO";
-  matricula?: string | null;
-}): Promise<ApiUser> => {
-  await apiFetch<string>("/usuarios/cadastro", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-  const list = await usersApi.list();
-  const found = list.find((x) => x.email === data.email);
-  if (found) return found;
-  return {
-    id: "",
-    name: data.nome,
-    email: data.email,
-    profile: data.perfil === "ADMINISTRADOR" ? "Administrador" : data.perfil === "COORDENADOR" ? "Coordenador" : "Aluno",
-    role: data.perfil === "ADMINISTRADOR" ? "admin" : data.perfil === "COORDENADOR" ? "coordinator" : "student",
-    matricula: data.matricula ?? "-",
-    createdAt: "-",
-  };
-},
+    nome: string;
+    email: string;
+    perfil: "ADMINISTRADOR" | "COORDENADOR" | "ALUNO";
+    matricula?: string | null;
+  }): Promise<ApiUser> => {
+    await apiFetch<string>("/usuarios/cadastro", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const list = await usersApi.list();
+    const found = list.find((x) => x.email === data.email);
+    if (found) return found;
+    return {
+      id: "",
+      name: data.nome,
+      email: data.email,
+      profile: data.perfil === "ADMINISTRADOR" ? "Administrador" : data.perfil === "COORDENADOR" ? "Coordenador" : "Aluno",
+      role: data.perfil === "ADMINISTRADOR" ? "admin" : data.perfil === "COORDENADOR" ? "coordinator" : "student",
+      matricula: data.matricula ?? "-",
+      createdAt: "-",
+    };
+  },
 
   update: async (id: string, data: Partial<ApiUser>): Promise<ApiUser> => {
     const perfil =
@@ -228,12 +239,32 @@ export const usersApi = {
 };
 
 // ─── Courses API ─────────────────────────────────────────────────
+/**
+ * Count only ALUNO users linked to a course (excludes COORDENADOR).
+ */
 async function countAlunosCurso(cursoId: string): Promise<number> {
   try {
-    const list = await apiFetch<unknown[]>(`/cursos/${cursoId}/alunos`);
-    return Array.isArray(list) ? list.length : 0;
+    const list = await apiFetch<Record<string, unknown>[]>(`/cursos/${cursoId}/alunos`);
+    if (!Array.isArray(list)) return 0;
+    // FIX: Only count users with papel === "ALUNO"
+    return list.filter((r) => String(r.papel ?? "") === "ALUNO").length;
   } catch {
     return 0;
+  }
+}
+
+/**
+ * Find the coordinator linked to a course (papel === "COORDENADOR").
+ */
+async function findCoordinatorForCourse(cursoId: string): Promise<{ name: string; id: string } | null> {
+  try {
+    const list = await apiFetch<Record<string, unknown>[]>(`/cursos/${cursoId}/alunos`);
+    if (!Array.isArray(list)) return null;
+    const coord = list.find((r) => String(r.papel ?? "") === "COORDENADOR");
+    if (!coord) return null;
+    return { name: String(coord.nomeUser ?? "—"), id: String(coord.idUser ?? "") };
+  } catch {
+    return null;
   }
 }
 
@@ -256,13 +287,22 @@ export const coursesApi = {
     const raw = await apiFetch<Record<string, unknown>[]>("/cursos");
     if (!Array.isArray(raw)) return [];
     const mapped = raw.map(mapCurso);
-    const withCounts = await Promise.all(
-      mapped.map(async (course) => ({
-        ...course,
-        studentCount: await countAlunosCurso(course.id),
-      }))
+    // FIX: Enrich each course with student count AND coordinator name
+    const withDetails = await Promise.all(
+      mapped.map(async (course) => {
+        const [studentCount, coord] = await Promise.all([
+          countAlunosCurso(course.id),
+          findCoordinatorForCourse(course.id),
+        ]);
+        return {
+          ...course,
+          studentCount,
+          coordinatorId: coord?.id ?? "",
+          coordinatorName: coord?.name ?? "—",
+        };
+      })
     );
-    return withCounts;
+    return withDetails;
   },
 
   listByCoordinator: async (_coordId: string): Promise<ApiCourse[]> => {
@@ -294,7 +334,11 @@ export const coursesApi = {
       body: JSON.stringify(body),
     });
     const m = mapCurso(updated ?? {});
-    return { ...m, studentCount: await countAlunosCurso(id) };
+    const [sc, coord] = await Promise.all([
+      countAlunosCurso(id),
+      findCoordinatorForCourse(id),
+    ]);
+    return { ...m, studentCount: sc, coordinatorId: coord?.id ?? "", coordinatorName: coord?.name ?? "—" };
   },
 
   delete: async (id: string): Promise<void> => {
@@ -407,6 +451,7 @@ export const proofsApi = {
             date: formatDate(String(c.dataEnvio ?? "")),
             status: mapComprovacaoStatus(String(c.status ?? "")),
             fileName: c.arquivo != null ? String(c.arquivo).split("/").pop() : undefined,
+            observacao: c.observacao != null ? String(c.observacao) : undefined,
           }));
         } catch {
           return [];
@@ -442,10 +487,11 @@ export const proofsApi = {
     });
   },
 
-  reject: async (comprovacaoId: string): Promise<void> => {
+  // FIX: Accept feedback message for rejection
+  reject: async (comprovacaoId: string, feedback: string): Promise<void> => {
     await apiFetch(`/comprovacoes/${comprovacaoId}/avaliar`, {
       method: "PUT",
-      body: JSON.stringify({ status: "REJEITADO", observacao: "" }),
+      body: JSON.stringify({ status: "REJEITADO", observacao: feedback }),
     });
   },
 };
@@ -477,13 +523,13 @@ export const notificacoesApi = {
       `/notificacoes?userId=${encodeURIComponent(userId)}`
     );
     if (!Array.isArray(raw)) return [];
-      return raw.map((n) => ({
-        id: Number(n.id ?? 0),
-        titulo: String(n.titulo ?? ""),
-        mensagem: String(n.mensagem ?? ""),
-        time: formatDate(String(n.createdAt ?? "")),
-        read: String(n.status ?? "") === "LIDA",
-      }));
+    return raw.map((n) => ({
+      id: Number(n.id ?? 0),
+      titulo: String(n.titulo ?? ""),
+      mensagem: String(n.mensagem ?? ""),
+      time: formatDate(String(n.createdAt ?? "")),
+      read: String(n.status ?? "") === "LIDA",
+    }));
   },
 
   marcarLida: async (id: number): Promise<void> => {
@@ -580,7 +626,11 @@ export const userCursoApi = {
     });
   },
 
-  listarAlunos: async (cursoId: string) => {
+  /**
+   * List ALL users linked to a course (both ALUNO and COORDENADOR).
+   * Returns the raw data with `papel` field.
+   */
+  listarTodos: async (cursoId: string): Promise<UserCursoVinculo[]> => {
     const raw = await apiFetch<Record<string, unknown>[]>(`/cursos/${cursoId}/alunos`);
     if (!Array.isArray(raw)) return [];
     return raw.map((r) => ({
@@ -589,7 +639,16 @@ export const userCursoApi = {
       email: String(r.emailUser ?? ""),
       idCurso: String(r.idCurso ?? ""),
       nomeCurso: String(r.nomeCurso ?? ""),
+      papel: String(r.papel ?? ""),
     }));
+  },
+
+  /**
+   * FIX: List only ALUNO users linked to a course (filters out COORDENADOR).
+   */
+  listarAlunos: async (cursoId: string) => {
+    const all = await userCursoApi.listarTodos(cursoId);
+    return all.filter((r) => r.papel === "ALUNO");
   },
 
   listarCursosDoAluno: async (alunoId: string): Promise<{ id: string; nome: string; hours: string; dataMatricula: string }[]> => {
