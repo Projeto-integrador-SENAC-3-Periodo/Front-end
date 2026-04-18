@@ -116,6 +116,7 @@ export interface UserCursoVinculo {
   id: string;
   nome: string;
   email: string;
+  matricula?: string;
   idCurso: string;
   nomeCurso: string;
   papel: string;
@@ -178,19 +179,49 @@ function formatDate(iso: string | undefined): string {
 }
 
 // ─── Users API ───────────────────────────────────────────────────
+
+function mapUserRow(u: Record<string, unknown>): ApiUser {
+  return {
+    id: String(u.id ?? ""),
+    name: String(u.nome ?? ""),
+    email: String(u.email ?? ""),
+    profile: profileLabel(String(u.perfil ?? "")),
+    role: mapPerfilToRole(String(u.perfil ?? "")),
+    matricula: u.matricula != null && String(u.matricula) !== "" ? String(u.matricula) : "-",
+    createdAt: "-",
+  };
+}
+
 export const usersApi = {
   list: async (): Promise<ApiUser[]> => {
     const raw = await apiFetch<Record<string, unknown>[]>("/usuarios");
     if (!Array.isArray(raw)) return [];
-    return raw.map((u) => ({
-      id: String(u.id ?? ""),
-      name: String(u.nome ?? ""),
-      email: String(u.email ?? ""),
-      profile: profileLabel(String(u.perfil ?? "")),
-      role: mapPerfilToRole(String(u.perfil ?? "")),
-      matricula: u.matricula != null && String(u.matricula) !== "" ? String(u.matricula) : "-",
-      createdAt: "-",
-    }));
+    return raw.map(mapUserRow);
+  },
+
+  /**
+   * Search users by name, matricula or email.
+   * Accessible to COORDENADOR and ADMINISTRADOR.
+   * Optionally filter by perfil (ALUNO, COORDENADOR, ADMINISTRADOR).
+   */
+  search: async (q: string, perfil?: string): Promise<ApiUser[]> => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (perfil) params.set("perfil", perfil);
+    const raw = await apiFetch<Record<string, unknown>[]>(
+      `/usuarios/busca?${params.toString()}`
+    );
+    if (!Array.isArray(raw)) return [];
+    return raw.map(mapUserRow);
+  },
+
+  /**
+   * List only ALUNO users. Accessible to COORDENADOR and ADMINISTRADOR.
+   */
+  listAlunos: async (): Promise<ApiUser[]> => {
+    const raw = await apiFetch<Record<string, unknown>[]>("/usuarios/alunos");
+    if (!Array.isArray(raw)) return [];
+    return raw.map(mapUserRow);
   },
 
   create: async (data: {
@@ -626,21 +657,17 @@ export const userCursoApi = {
     });
   },
 
-  /**
-   * List ALL users linked to a course (both ALUNO and COORDENADOR).
-   * Returns the raw data with `papel` field.
-   */
   listarTodos: async (cursoId: string): Promise<UserCursoVinculo[]> => {
     const raw = await apiFetch<Record<string, unknown>[]>(`/cursos/${cursoId}/alunos`);
     if (!Array.isArray(raw)) return [];
-    return raw.map((r) => ({
-      id: String(r.idUser ?? ""),
-      nome: String(r.nomeUser ?? ""),
-      email: String(r.emailUser ?? ""),
-      idCurso: String(r.idCurso ?? ""),
-      nomeCurso: String(r.nomeCurso ?? ""),
-      papel: String(r.papel ?? ""),
-    }));
+      return raw.map((r) => ({
+        id: String(r.idUser ?? ""),
+        nome: String(r.nomeUser ?? ""),
+        email: String(r.emailUser ?? ""),
+        idCurso: String(r.idCurso ?? ""),
+        nomeCurso: String(r.nomeCurso ?? ""),
+        papel: String(r.papel ?? ""),
+      }));
   },
 
   /**

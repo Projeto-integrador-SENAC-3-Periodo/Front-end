@@ -221,11 +221,16 @@ function CoordStudents() {
   const [loading, setLoading] = useState(true);
   const [courses, setCourses] = useState<ApiCourse[]>([]);
 
-  // FIX: Search by student name instead of ID
-  const [allStudents, setAllStudents] = useState<ApiUser[]>([]);
+  // Search results from backend (no more usersApi.list() which requires ADMIN)
+  const [searchResults, setSearchResults] = useState<ApiUser[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
   const [selAlunoId, setSelAlunoId] = useState("");
+  const [selAlunoName, setSelAlunoName] = useState("");
   const [selCurso, setSelCurso] = useState("");
+
+  // Filter for the students table
+  const [tableFilter, setTableFilter] = useState("");
 
   const load = useCallback(async () => {
     if (!user?.id) return;
@@ -235,7 +240,6 @@ function CoordStudents() {
       setCourses(courseList);
       const parts = await Promise.all(
         courseList.map(async (c) => {
-          // FIX: listarAlunos now returns only ALUNO role
           const alunos = await userCursoApi.listarAlunos(c.id);
           return alunos.map((a) => ({
             id: `${a.id}-${c.id}`,
@@ -243,16 +247,12 @@ function CoordStudents() {
             cursoId: c.id,
             name: a.nome,
             email: a.email,
-            matricula: "—",
+            matricula: a.matricula || "—",
             course: c.name,
           }));
         })
       );
       setStudents(parts.flat());
-
-      // Load all students for the search dropdown
-      const userList = await usersApi.list();
-      setAllStudents(userList.filter((u) => u.role === "student"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao carregar alunos");
     } finally {
@@ -262,15 +262,39 @@ function CoordStudents() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Filter students by search term
-  const filteredStudents = allStudents.filter((s) =>
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Debounced search using the new /usuarios/busca endpoint
+  useEffect(() => {
+    if (searchTerm.length < 2 || selAlunoId) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const results = await usersApi.search(searchTerm, "ALUNO");
+        setSearchResults(results);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm, selAlunoId]);
+
+  // Filter students table by name, email or matricula
+  const filteredTableStudents = tableFilter.trim()
+    ? students.filter((s) =>
+        s.name.toLowerCase().includes(tableFilter.toLowerCase()) ||
+        s.email.toLowerCase().includes(tableFilter.toLowerCase()) ||
+        s.matricula.toLowerCase().includes(tableFilter.toLowerCase())
+      )
+    : students;
 
   const columns: Column<StudentRow>[] = [
     { key: "name", header: "Nome" },
     { key: "email", header: "Email" },
+    { key: "matricula", header: "Matrícula" },
     { key: "course", header: "Curso" },
     { key: "actions", header: "Ações", render: (item: StudentRow) => (
       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Desvincular aluno"
@@ -298,6 +322,7 @@ function CoordStudents() {
       toast.success("Aluno vinculado ao curso!");
       setModalOpen(false);
       setSelAlunoId("");
+      setSelAlunoName("");
       setSelCurso("");
       setSearchTerm("");
       load();
@@ -312,44 +337,72 @@ function CoordStudents() {
         <h2 className="font-display font-semibold text-lg">Alunos vinculados</h2>
         <Button onClick={() => setModalOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Vincular aluno</Button>
       </div>
-      {loading ? <TableSkeleton columns={4} /> : students.length === 0 ? <EmptyState title="Nenhum aluno vinculado" description="Vincule alunos aos seus cursos." /> : <DataTable columns={columns} data={students} />}
+
+      {/* Search/filter for the students table */}
+      {!loading && students.length > 0 && (
+        <div className="flex gap-2">
+          <Input
+            placeholder="Filtrar por nome, email ou matrícula..."
+            value={tableFilter}
+            onChange={(e) => setTableFilter(e.target.value)}
+            className="max-w-sm"
+          />
+        </div>
+      )}
+
+      {loading ? <TableSkeleton columns={5} /> : filteredTableStudents.length === 0 ? (
+        <EmptyState
+          title={tableFilter ? "Nenhum aluno encontrado" : "Nenhum aluno vinculado"}
+          description={tableFilter ? "Tente outro termo de busca." : "Vincule alunos aos seus cursos."}
+        />
+      ) : (
+        <DataTable columns={columns} data={filteredTableStudents} />
+      )}
+
       <ModalForm open={modalOpen} onOpenChange={setModalOpen} title="Vincular aluno ao curso">
         <form onSubmit={vincular} className="space-y-4">
-          {/* FIX: Search by student name instead of ID */}
           <div className="space-y-2">
-            <Label>Buscar Aluno por Nome</Label>
+            <Label>Buscar Aluno por Nome ou Matrícula</Label>
             <Input
-              placeholder="Digite o nome do aluno..."
+              placeholder="Digite o nome ou matrícula do aluno..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setSelAlunoId("");
+                setSelAlunoName("");
               }}
             />
-            {searchTerm.length >= 2 && filteredStudents.length > 0 && !selAlunoId && (
+            {searchLoading && (
+              <p className="text-xs text-muted-foreground">Buscando...</p>
+            )}
+            {searchTerm.length >= 2 && searchResults.length > 0 && !selAlunoId && (
               <div className="border rounded-md max-h-40 overflow-y-auto bg-white">
-                {filteredStudents.slice(0, 10).map((s) => (
+                {searchResults.slice(0, 10).map((s) => (
                   <button
                     key={s.id}
                     type="button"
                     className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm border-b last:border-0"
                     onClick={() => {
                       setSelAlunoId(s.id);
+                      setSelAlunoName(s.name);
                       setSearchTerm(s.name);
                     }}
                   >
                     <span className="font-medium">{s.name}</span>
+                    {s.matricula && s.matricula !== "-" && (
+                      <span className="text-muted-foreground ml-2 text-xs">Mat: {s.matricula}</span>
+                    )}
                     <span className="text-muted-foreground ml-2 text-xs">({s.email})</span>
                   </button>
                 ))}
               </div>
             )}
-            {searchTerm.length >= 2 && filteredStudents.length === 0 && !selAlunoId && (
+            {searchTerm.length >= 2 && searchResults.length === 0 && !selAlunoId && !searchLoading && (
               <p className="text-xs text-muted-foreground">Nenhum aluno encontrado.</p>
             )}
             {selAlunoId && (
               <p className="text-xs text-green-600 font-medium">
-                ✓ Aluno selecionado: {allStudents.find((s) => s.id === selAlunoId)?.name}
+                ✓ Aluno selecionado: {selAlunoName}
               </p>
             )}
           </div>
@@ -365,7 +418,7 @@ function CoordStudents() {
             </Select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => { setModalOpen(false); setSearchTerm(""); setSelAlunoId(""); }}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => { setModalOpen(false); setSearchTerm(""); setSelAlunoId(""); setSelAlunoName(""); }}>Cancelar</Button>
             <Button type="submit" disabled={!selAlunoId || !selCurso}>Vincular</Button>
           </div>
         </form>
