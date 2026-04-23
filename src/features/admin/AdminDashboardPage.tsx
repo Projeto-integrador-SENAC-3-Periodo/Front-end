@@ -25,7 +25,6 @@ const navItems: NavItem[] = [
   { label: "Dashboard", path: "/admin", icon: LayoutDashboard },
   { label: "Usuários", path: "/admin/users", icon: Users },
   { label: "Cursos", path: "/admin/courses", icon: BookOpen },
-  { label: "Atividades", path: "/admin/activities", icon: ClipboardList },
   { label: "Notificações", path: "/admin/notifications", icon: Bell },
   { label: "Logs", path: "/admin/logs", icon: FileText },
   { label: "Perfil", path: "/admin/profile", icon: User },
@@ -517,7 +516,6 @@ const titleMap: Record<string, string> = {
   "/admin": "Dashboard",
   "/admin/users": "Usuários",
   "/admin/courses": "Cursos",
-  "/admin/activities": "Atividades",
   "/admin/notifications": "Notificações",
   "/admin/logs": "Logs do Sistema",
   "/admin/profile": "Perfil",
@@ -535,7 +533,6 @@ export default function AdminDashboardPage() {
             <Route index element={<AdminDashboard />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="courses" element={<AdminCourses />} />
-            <Route path="activities" element={<AdminActivities />} />
             <Route path="notifications" element={<AdminNotifications />} />
             <Route path="logs" element={<AdminLogs />} />
             <Route path="profile" element={<AdminProfile />} />

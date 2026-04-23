@@ -24,7 +24,6 @@ import { coursesApi, activitiesApi, proofsApi, type ApiCourse, type ApiActivity,
 // ─── Nav Items (Sidebar) ─────────────────────────────────────────
 const navItems: NavItem[] = [
   { label: "Dashboard", path: "/coordinator", icon: LayoutDashboard },
-  { label: "Cursos", path: "/coordinator/courses", icon: BookOpen },
   { label: "Alunos", path: "/coordinator/students", icon: Users },
   { label: "Atividades", path: "/coordinator/activities", icon: ClipboardList },
   { label: "Comprovações", path: "/coordinator/proofs", icon: FileCheck },
@@ -35,7 +34,6 @@ const navItems: NavItem[] = [
 
 const bottomNavItems = [
   { label: "Dashboard", path: "/coordinator", icon: LayoutDashboard },
-  { label: "Cursos", path: "/coordinator/courses", icon: BookOpen },
   { label: "Comprovações", path: "/coordinator/proofs", icon: FileCheck },
   { label: "Notificações", path: "/coordinator/notifications", icon: Bell },
   { label: "Perfil", path: "/coordinator/profile", icon: User },
@@ -70,7 +68,6 @@ function CoordDashboard() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="Cursos Ativos" value={3} icon={BookOpen} />
         <MetricCard title="Alunos Vinculados" value={64} icon={Users} />
         <MetricCard title="Comprovantes Pendentes" value={2} icon={FileCheck} variant="accent" />
         <MetricCard title="Certificados Emitidos" value={89} icon={Award} />
@@ -149,7 +146,6 @@ function CoordCourses() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-display font-semibold text-lg">Meus Cursos</h2>
         <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Novo Curso</Button>
       </div>
       {loading ? <TableSkeleton columns={5} /> : data.length === 0 ? <EmptyState title="Nenhum curso" description="Crie seu primeiro curso." /> : <DataTable columns={columns} data={data} />}
@@ -202,7 +198,15 @@ function CoordActivities() {
   const [editing, setEditing] = useState<ApiActivity | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [coursesList, setCoursesList] = useState<ApiCourse[]>([]);
-  const [formData, setFormData] = useState({ title: "", description: "", courseId: "", category: "", points: "", proofType: "" });
+  
+  const [formData, setFormData] = useState({ 
+    title: "", 
+    description: "", 
+    courseId: "", 
+    category: "", 
+    points: "", 
+    proofType: "" 
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -229,10 +233,10 @@ function CoordActivities() {
     await activitiesApi.delete(deleteId); toast.success("Atividade excluída!"); setDeleteId(null); load();
   };
 
-  const proofLabels: Record<string, string> = { certificate: "Certificado", photo: "Foto", document: "Documento" };
   const columns: Column<ApiActivity>[] = [
-    { key: "title", header: "Nome" }, { key: "courseName", header: "Curso" }, { key: "category", header: "Categoria" }, { key: "points", header: "Pontos" },
-    { key: "proofType", header: "Comprovação", render: (item) => <span>{proofLabels[item.proofType as string] || item.proofType}</span> },
+    { key: "title", header: "Título" }, 
+    { key: "category", header: "Categoria" }, 
+    { key: "points", header: "Horas" },
     { key: "actions", header: "Ações", render: (item) => (
       <div className="flex gap-1">
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(item)}><Pencil className="h-4 w-4" /></Button>
@@ -243,20 +247,55 @@ function CoordActivities() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between"><h2 className="font-display font-semibold text-lg">Atividades</h2><Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Nova Atividade</Button></div>
-      {loading ? <TableSkeleton columns={6} /> : data.length === 0 ? <EmptyState title="Nenhuma atividade" /> : <DataTable columns={columns} data={data} />}
-      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Editar Atividade" : "Nova Atividade"}>
+      <div className="flex items-center justify-between"><h2 className="font-display font-semibold text-lg">Gerenciar Atividades</h2><Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Nova Atividade</Button></div>
+      {loading ? <TableSkeleton columns={4} /> : <DataTable columns={columns} data={data} />}
+      
+      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Editar Atividade" : "Enviar Atividade"}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2"><Label>Título</Label><Input placeholder="Título" required value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Descrição</Label><Textarea placeholder="Descrição" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Curso</Label><Select value={formData.courseId} onValueChange={v => setFormData(p => ({ ...p, courseId: v }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{coursesList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-2"><Label>Categoria</Label><Input placeholder="Ex: Palestra" required value={formData.category} onChange={e => setFormData(p => ({ ...p, category: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Tipo de Comprovação</Label><Select value={formData.proofType} onValueChange={v => setFormData(p => ({ ...p, proofType: v }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent><SelectItem value="certificate">Certificado</SelectItem><SelectItem value="photo">Foto</SelectItem><SelectItem value="document">Documento</SelectItem></SelectContent></Select></div>
-          <div className="space-y-2"><Label>Pontos</Label><Input type="number" placeholder="10" required value={formData.points} onChange={e => setFormData(p => ({ ...p, points: e.target.value }))} /></div>
-          <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button><Button type="submit">{editing ? "Salvar" : "Criar"}</Button></div>
+          <div className="space-y-2">
+            <Label>Título</Label>
+            <Input placeholder="Ex: Curso de Python" required value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} />
+          </div>
+          <div className="space-y-2">
+            <Label>Tipo da atividade</Label>
+            <Select value={formData.proofType} onValueChange={v => setFormData(p => ({ ...p, proofType: v }))}>
+              <SelectTrigger><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="certificate">Certificado</SelectItem>
+                <SelectItem value="photo">Foto</SelectItem>
+                <SelectItem value="document">Documento</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Categoria</Label>
+            <Select value={formData.category} onValueChange={v => setFormData(p => ({ ...p, category: v }))}>
+              <SelectTrigger><SelectValue placeholder="Selecione a categoria" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Ensino">Ensino</SelectItem>
+                <SelectItem value="Extensão">Extensão</SelectItem>
+                <SelectItem value="Pesquisa">Pesquisa</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Descrição</Label>
+            <Textarea placeholder="Breve descrição da atividade" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} />
+          </div>
+          <div className="space-y-2">
+            <Label>Horas do certificado</Label>
+            <Input type="number" placeholder="Ex: 10" required value={formData.points} onChange={e => setFormData(p => ({ ...p, points: e.target.value }))} />
+          </div>
+          <div className="space-y-2">
+            <Label>Comprovante (PDF ou img)</Label>
+            <Input type="file" accept="application/pdf,image/*" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
+            <Button type="submit">Enviar Comprovante</Button>
+          </div>
         </form>
       </ModalForm>
-      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir Atividade" description="Tem certeza?" onConfirm={handleDelete} confirmLabel="Excluir" />
     </div>
   );
 }
@@ -266,6 +305,7 @@ function CoordProofs() {
   const [data, setData] = useState<ApiProof[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProof, setSelectedProof] = useState<ApiProof | null>(null);
+  const [editData, setEditData] = useState({ points: 0, category: "", activityTitle: "", rejectionReason: "" });
 
   const load = useCallback(async () => {
     setLoading(true); setData(await proofsApi.list()); setLoading(false);
@@ -273,47 +313,86 @@ function CoordProofs() {
 
   useEffect(() => { load(); }, [load]);
 
-  // CORRIGIDO: Utilizando approve e reject que existem na sua api.ts
+  const handleOpenReview = (proof: ApiProof) => {
+    setSelectedProof(proof);
+    setEditData({ 
+      points: proof.points || 0, 
+      category: proof.category || "Ensino", 
+      activityTitle: proof.activityTitle,
+      rejectionReason: "" 
+    });
+  };
+
   const handleApprove = async () => {
     if (!selectedProof) return;
-    await proofsApi.approve(selectedProof.id);
+    await proofsApi.approve(selectedProof.id, { 
+      points: editData.points, 
+      category: editData.category,
+      activityTitle: editData.activityTitle 
+    });
     toast.success("Comprovante aprovado!");
     setSelectedProof(null); load();
   };
 
   const handleReject = async () => {
     if (!selectedProof) return;
-    await proofsApi.reject(selectedProof.id);
+    if (!editData.rejectionReason) {
+      toast.error("Informe o motivo da rejeição");
+      return;
+    }
+    await proofsApi.reject(selectedProof.id, editData.rejectionReason);
     toast.error("Comprovante rejeitado");
     setSelectedProof(null); load();
   };
 
-  const columns: Column<ApiProof>[] = [
-    { key: "studentName", header: "Aluno" }, { key: "activityTitle", header: "Atividade" }, { key: "date", header: "Data Envio" },
-    { key: "status", header: "Status", render: (item) => <StatusBadge status={item.status} /> },
-    { key: "actions", header: "Ações", render: (item) => <Button variant="ghost" size="icon" onClick={() => setSelectedProof(item)}><Eye className="h-4 w-4" /></Button> },
-  ];
-
   return (
     <div className="space-y-4">
-      <h2 className="font-display font-semibold text-lg">Comprovações</h2>
-      {loading ? <TableSkeleton columns={5} /> : data.length === 0 ? <EmptyState title="Nenhuma comprovação" /> : <DataTable columns={columns} data={data} />}
-      <ModalForm open={!!selectedProof} onOpenChange={() => setSelectedProof(null)} title="Avaliar Comprovante">
+      <h2 className="font-display font-semibold text-lg">Comprovações Pendentes</h2>
+      {loading ? <TableSkeleton columns={5} /> : <DataTable 
+        columns={[
+          { key: "studentName", header: "Aluno" }, { key: "activityTitle", header: "Atividade" },
+          { key: "status", header: "Status", render: (item) => <StatusBadge status={item.status} /> },
+          { key: "actions", header: "Ações", render: (item) => <Button variant="ghost" size="icon" onClick={() => handleOpenReview(item)}><Eye className="h-4 w-4" /></Button> },
+        ]} 
+        data={data} 
+      />}
+
+      <ModalForm open={!!selectedProof} onOpenChange={() => setSelectedProof(null)} title="Validar Comprovante">
         {selectedProof && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><p className="text-muted-foreground">Aluno</p><p className="font-medium">{selectedProof.studentName}</p></div>
-              <div><p className="text-muted-foreground">Atividade</p><p className="font-medium">{selectedProof.activityTitle}</p></div>
-              <div><p className="text-muted-foreground">Data</p><p className="font-medium">{selectedProof.date}</p></div>
-              <div><p className="text-muted-foreground">Status</p><StatusBadge status={selectedProof.status} /></div>
+            <div className="space-y-2">
+              <Label>Editar Título</Label>
+              <Input value={editData.activityTitle} onChange={e => setEditData(p => ({...p, activityTitle: e.target.value}))} />
             </div>
-            <div className="bg-muted rounded-md p-8 text-center text-sm text-muted-foreground">[Visualização do documento]</div>
-            {selectedProof.status === "pending" && (
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" className="text-destructive" onClick={handleReject}><X className="h-4 w-4" /> Rejeitar</Button>
-                <Button onClick={handleApprove}><Check className="h-4 w-4" /> Aprovar</Button>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Editar Horas</Label>
+                <Input type="number" value={editData.points} onChange={e => setEditData(p => ({...p, points: Number(e.target.value)}))} />
               </div>
-            )}
+              <div className="space-y-2">
+                <Label>Editar Categoria</Label>
+                <Select value={editData.category} onValueChange={v => setEditData(p => ({...p, category: v}))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Ensino">Ensino</SelectItem>
+                    <SelectItem value="Extensão">Extensão</SelectItem>
+                    <SelectItem value="Pesquisa">Pesquisa</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2 pt-2 border-t">
+              <Label className="text-destructive">Observação da Rejeição</Label>
+              <Textarea 
+                placeholder="Descreva o motivo caso for rejeitar..." 
+                value={editData.rejectionReason}
+                onChange={e => setEditData(p => ({...p, rejectionReason: e.target.value}))}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" className="text-destructive" onClick={handleReject}><X className="h-4 w-4" /> Rejeitar</Button>
+              <Button onClick={handleApprove} className="bg-success text-white hover:bg-success/90"><Check className="h-4 w-4" /> Aprovar</Button>
+            </div>
           </div>
         )}
       </ModalForm>
@@ -322,91 +401,97 @@ function CoordProofs() {
 }
 
 // ─── Certificates ────────────────────────────────────────────────
-interface Certificate { student: string; activity: string; date: string; }
 function CoordCertificates() {
-  const certs: Certificate[] = [
-    { student: "João Pedro", activity: "Palestra de IA", date: "2024-03-15" },
-    { student: "Ana Silva", activity: "Workshop React", date: "2024-03-12" },
-  ];
-  const columns: Column<Certificate>[] = [{ key: "student", header: "Aluno" }, { key: "activity", header: "Atividade" }, { key: "date", header: "Data" }];
-  return (
-    <div className="space-y-4">
-      <h2 className="font-display font-semibold text-lg">Certificados Emitidos</h2>
-      {certs.length === 0 ? <EmptyState title="Nenhum certificado" /> : <DataTable columns={columns} data={certs} />}
-    </div>
-  );
+  return <div className="space-y-4"><h2 className="font-display font-semibold text-lg">Certificados</h2><EmptyState title="Nenhum certificado" /></div>;
 }
 
 // ─── Notifications ───────────────────────────────────────────────
-interface Notification { id: number; msg: string; time: string; read: boolean; }
 function CoordNotifications() {
-  const [notifications, setNotifications] = useState<Notification[]>([
-    { id: 1, msg: "João Pedro enviou comprovante para Palestra de IA", time: "Há 10 min", read: false },
-    { id: 2, msg: "Novo aluno vinculado ao curso Design Gráfico", time: "Há 2h", read: true },
-  ]);
-  const markAsRead = (id: number) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    toast.success("Notificação lida");
-  };
-  return (
-    <div className="space-y-4">
-      <h2 className="font-display font-semibold text-lg">Notificações</h2>
-      {notifications.length === 0 ? <EmptyState title="Vazio" /> : (
-        <div className="bg-card border rounded-md divide-y">{notifications.map((n) => (
-            <div key={n.id} className={`flex items-center justify-between p-4 ${!n.read ? "bg-primary/5" : ""}`}>
-              <div className="flex items-center gap-3">{!n.read && <div className="w-2 h-2 rounded-full bg-accent" />}<span className="text-sm">{n.msg}</span></div>
-              <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{n.time}</span>{!n.read && <Button variant="ghost" size="sm" onClick={() => markAsRead(n.id)}>Lido</Button>}</div>
-            </div>
-          ))}</div>
-      )}
-    </div>
-  );
+  return <div className="space-y-4"><h2 className="font-display font-semibold text-lg">Notificações</h2><EmptyState title="Sem notificações" /></div>;
 }
 
-// ─── Profile ─────────────────────────────────────────────────────
+// ─── Profile (EDITÁVEL) ──────────────────────────────────────────
 function CoordProfile() {
   const { user, updateProfile } = useAuth();
-  const [editing, setEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault(); updateProfile({ name }); toast.success("Perfil atualizado!"); setEditing(false);
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (updateProfile) {
+        await updateProfile({ name });
+        toast.success("Perfil atualizado com sucesso!");
+        setIsEditing(false);
+      }
+    } catch (error) {
+      toast.error("Erro ao atualizar perfil.");
+    }
   };
 
   return (
     <div className="max-w-lg mx-auto">
       <h2 className="font-display font-semibold text-lg mb-4">Meu Perfil</h2>
-      <div className="bg-card border rounded-md p-5 space-y-4">
+      <div className="bg-card border rounded-md p-6 space-y-6">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-senac-blue flex items-center justify-center text-white text-xl font-bold">{user?.name?.charAt(0)}</div>
-          <div><p className="font-display font-semibold">{user?.name}</p><p className="text-sm text-muted-foreground">{user?.email}</p><p className="text-xs text-muted-foreground">Coordenador</p></div>
+          <div className="w-20 h-20 rounded-full bg-senac-blue flex items-center justify-center text-white text-2xl font-bold">
+            {user?.name?.charAt(0)}
+          </div>
+          <div>
+            <p className="font-display font-semibold text-xl">{user?.name}</p>
+            <p className="text-sm text-muted-foreground">{user?.email}</p>
+            <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10 mt-1">
+              Coordenadora
+            </span>
+          </div>
         </div>
-        {editing ? (
+
+        {isEditing ? (
           <form onSubmit={handleSave} className="space-y-4 pt-4 border-t">
-            <div className="space-y-2"><Label>Nome</Label><Input value={name} onChange={e => setName(e.target.value)} required /></div>
-            <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancelar</Button><Button type="submit">Salvar</Button></div>
+            <div className="space-y-2">
+              <Label htmlFor="name">Nome Completo</Label>
+              <Input 
+                id="name"
+                value={name} 
+                onChange={(e) => setName(e.target.value)} 
+                required 
+                placeholder="Seu nome"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsEditing(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit">
+                Salvar Alterações
+              </Button>
+            </div>
           </form>
-        ) : <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>}
+        ) : (
+          <div className="pt-4 border-t">
+            <Button variant="outline" onClick={() => setIsEditing(true)} className="w-full gap-2">
+              <Pencil className="h-4 w-4" /> Editar Perfil
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-const titleMap: Record<string, string> = {
-  "/coordinator": "Dashboard", "/coordinator/courses": "Cursos", "/coordinator/students": "Alunos", "/coordinator/activities": "Atividades",
-  "/coordinator/proofs": "Comprovações", "/coordinator/certificates": "Certificados", "/coordinator/notifications": "Notificações", "/coordinator/profile": "Perfil",
-};
-
 export default function CoordinatorDashboardPage() {
   const location = useLocation();
-  const title = titleMap[location.pathname] || "Dashboard";
+  const title = {
+    "/coordinator": "Dashboard", "/coordinator/students": "Alunos",
+    "/coordinator/activities": "Atividades", "/coordinator/proofs": "Comprovações", "/coordinator/profile": "Perfil"
+  }[location.pathname] || "Dashboard";
+
   return (
     <div className="min-h-screen bg-gray-50">
       <DashboardLayout navItems={navItems} title={title}>
         <div className="pb-24 lg:pb-8 px-4">
           <Routes>
             <Route index element={<CoordDashboard />} />
-            <Route path="courses" element={<CoordCourses />} />
             <Route path="students" element={<CoordStudents />} />
             <Route path="activities" element={<CoordActivities />} />
             <Route path="proofs" element={<CoordProofs />} />
