@@ -13,7 +13,7 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (identificador: string, senha: string) => Promise<boolean>;
   logout: () => void;
   isAuthenticated: boolean;
   hasPermission: (allowedRoles: UserRole[]) => boolean;
@@ -22,67 +22,80 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const mockUsers: Record<string, User> = {
-  "admin@senac.br": { id: "1", name: "Carlos Admin", email: "admin@senac.br", role: "admin" },
-  "coord@senac.br": { id: "2", name: "Maria Coordenadora", email: "coord@senac.br", role: "coordinator" },
-  "aluno@senac.br": { id: "3", name: "João Pedro", email: "joao@senac.br", role: "student", matricula: "2024001" },
-};
+const BASE_URL = import.meta.env.VITE_API_URL;
 
-// Simulates JWT token generation
-function generateMockToken(user: User): string {
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({ sub: user.id, email: user.email, role: user.role, exp: Date.now() + 86400000 }));
-  return `${header}.${payload}.mock-signature`;
-}
-
-function parseToken(token: string): { sub: string; email: string; role: UserRole; exp: number } | null {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    if (payload.exp < Date.now()) return null; // expired
-    return payload;
-  } catch {
-    return null;
-  }
+// Converte o perfil do backend para o role do frontend
+function mapPerfil(perfil: string): UserRole {
+  if (perfil === "ADMINISTRADOR") return "admin";
+  if (perfil === "COORDENADOR") return "coordinator";
+  return "student";
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  // Inicializa o estado a partir do localStorage (sessão persistida)
   const [user, setUser] = useState<User | null>(() => {
-    const token = localStorage.getItem("senac_token");
-    if (!token) return null;
-    const payload = parseToken(token);
-    if (!payload) { localStorage.removeItem("senac_token"); localStorage.removeItem("senac_user"); return null; }
-    const saved = localStorage.getItem("senac_user");
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem("senac_user");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
 
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem("senac_token"));
+  const [token, setToken] = useState<string | null>(() =>
+    localStorage.getItem("senac_token")
+  );
 
-  const login = useCallback(async (email: string, _password: string) => {
-    const found = mockUsers[email.toLowerCase()];
-    if (found) {
-      const jwt = generateMockToken(found);
-      setUser(found);
+  const login = useCallback(async (identificador: string, senha: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${BASE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identificador, senha }),
+      });
+
+      if (!response.ok) return false;
+
+      // Resposta: { token, type, perfil, nome, email, expiresAt, senhaProvisoria }
+      const data = await response.json();
+
+      const jwt: string = data.token;
+      const role = mapPerfil(data.perfil ?? "");
+
+      const loggedUser: User = {
+        id: data.id ? String(data.id) : "",
+        name: data.nome ?? "",
+        email: data.email ?? "",
+        role,
+        matricula: data.matricula,
+      };
+
+      setUser(loggedUser);
       setToken(jwt);
-      localStorage.setItem("senac_user", JSON.stringify(found));
       localStorage.setItem("senac_token", jwt);
+      localStorage.setItem("senac_user", JSON.stringify(loggedUser));
+
       return true;
+    } catch (err) {
+      console.error("Erro no login:", err);
+      return false;
     }
-    return false;
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
-    localStorage.removeItem("senac_user");
     localStorage.removeItem("senac_token");
+    localStorage.removeItem("senac_user");
   }, []);
 
-  const hasPermission = useCallback((allowedRoles: UserRole[]) => {
-    return !!user && allowedRoles.includes(user.role);
-  }, [user]);
+  const hasPermission = useCallback(
+    (allowedRoles: UserRole[]) => !!user && allowedRoles.includes(user.role),
+    [user]
+  );
 
   const updateProfile = useCallback((data: Partial<Pick<User, "name">>) => {
-    setUser(prev => {
+    setUser((prev) => {
       if (!prev) return prev;
       const updated = { ...prev, ...data };
       localStorage.setItem("senac_user", JSON.stringify(updated));
@@ -91,7 +104,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!user, hasPermission, updateProfile }}>
+    <AuthContext.Provider
+      value={{ user, token, login, logout, isAuthenticated: !!user, hasPermission, updateProfile }}
+    >
       {children}
     </AuthContext.Provider>
   );
