@@ -302,11 +302,7 @@ function AdminProfile() {
   const { user, updateProfile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
-  const [changingPassword, setChangingPassword] = useState(false);
-  const [senhaAtual, setSenhaAtual] = useState("");
-  const [novaSenha, setNovaSenha] = useState("");
-  const [confirmacao, setConfirmacao] = useState("");
-  const [submittingPw, setSubmittingPw] = useState(false);
+  const [password, setPassword] = useState("");
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault(); updateProfile({ name }); toast.success("Perfil atualizado!"); setEditing(false);

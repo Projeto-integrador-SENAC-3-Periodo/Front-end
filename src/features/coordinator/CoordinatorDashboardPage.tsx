@@ -163,7 +163,7 @@ function CoordStudents() {
   );
 }
 
-// ─── Activities (visualização) ────────────────────────────────────
+// ─── Activities ──────────────────────────────────────────────────
 function CoordActivities() {
   const { user } = useAuth();
   const { cursoIds, loading: loadingCursos } = useMeusCursos(user?.id);
@@ -428,16 +428,11 @@ function CoordNotifications() {
   );
 }
 
-// ─── Profile ─────────────────────────────────────────────────────
+// ─── Profile (EDITÁVEL) ──────────────────────────────────────────
 function CoordProfile() {
   const { user, updateProfile } = useAuth();
-  const [editing, setEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
-  const [changingPassword, setChangingPassword] = useState(false);
-  const [senhaAtual, setSenhaAtual] = useState("");
-  const [novaSenha, setNovaSenha] = useState("");
-  const [confirmacao, setConfirmacao] = useState("");
-  const [submittingPw, setSubmittingPw] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault(); updateProfile({ name }); toast.success("Perfil atualizado!"); setEditing(false);
@@ -458,7 +453,7 @@ function CoordProfile() {
   return (
     <div className="max-w-lg mx-auto">
       <h2 className="font-display font-semibold text-lg mb-4">Meu Perfil</h2>
-      <div className="bg-card border rounded-md p-5 space-y-4">
+      <div className="bg-card border rounded-md p-6 space-y-6">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-senac-blue flex items-center justify-center text-white text-xl font-bold">{user?.name?.charAt(0)}</div>
           <div>
@@ -489,6 +484,12 @@ function CoordProfile() {
               <Button type="submit" disabled={submittingPw}>{submittingPw ? "Salvando..." : "Alterar"}</Button>
             </div>
           </form>
+        ) : (
+          <div className="pt-4 border-t">
+            <Button variant="outline" onClick={() => setIsEditing(true)} className="w-full gap-2">
+              <Pencil className="h-4 w-4" /> Editar Perfil
+            </Button>
+          </div>
         )}
       </div>
     </div>
