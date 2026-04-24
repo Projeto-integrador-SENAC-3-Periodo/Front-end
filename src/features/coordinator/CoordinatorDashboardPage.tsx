@@ -248,7 +248,7 @@ function CoordProofs() {
 
   const openReview = (a: ApiActivity) => {
     setSelected(a);
-    setForm({ horasAprovadas: String(a.horasSolicitadas), categoriaFixa: a.categoriaFixa, idTipoAtividade: a.idTipoAtividade, motivoReprovacao: "", showReject: false });
+    setForm({ horasAprovadas: String(a.horasSolicitadas), categoriaFixa: a.categoriaFixa, idTipoAtividade: a.tipoAtividade, motivoReprovacao: "", showReject: false });
   };
 
   const handleAprovar = async () => {
@@ -431,8 +431,13 @@ function CoordNotifications() {
 // ─── Profile (EDITÁVEL) ──────────────────────────────────────────
 function CoordProfile() {
   const { user, updateProfile } = useAuth();
-  const [isEditing, setIsEditing] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
+  const [changingPassword, setChangingPassword] = useState(false);
+const [senhaAtual, setSenhaAtual] = useState("");
+const [novaSenha, setNovaSenha] = useState("");
+const [confirmacao, setConfirmacao] = useState("");
+const [submittingPw, setSubmittingPw] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault(); updateProfile({ name }); toast.success("Perfil atualizado!"); setEditing(false);
@@ -476,20 +481,57 @@ function CoordProfile() {
         {changingPassword && (
           <form onSubmit={handleChangePassword} className="space-y-3 pt-4 border-t">
             <h3 className="font-semibold">Alterar Senha</h3>
-            <div className="space-y-1"><Label>Senha Atual</Label><Input type="password" required value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} /></div>
-            <div className="space-y-1"><Label>Nova Senha</Label><Input type="password" placeholder="Mínimo 8 caracteres" required value={novaSenha} onChange={e => setNovaSenha(e.target.value)} /></div>
-            <div className="space-y-1"><Label>Confirmar</Label><Input type="password" required value={confirmacao} onChange={e => setConfirmacao(e.target.value)} /></div>
+
+            <div className="space-y-1">
+              <Label>Senha Atual</Label>
+              <Input
+                type="password"
+                required
+                value={senhaAtual}
+                onChange={e => setSenhaAtual(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label>Nova Senha</Label>
+              <Input
+                type="password"
+                placeholder="Mínimo 8 caracteres"
+                required
+                value={novaSenha}
+                onChange={e => setNovaSenha(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label>Confirmar</Label>
+              <Input
+                type="password"
+                required
+                value={confirmacao}
+                onChange={e => setConfirmacao(e.target.value)}
+              />
+            </div>
+
             <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={() => { setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao(""); }}>Cancelar</Button>
-              <Button type="submit" disabled={submittingPw}>{submittingPw ? "Salvando..." : "Alterar"}</Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setChangingPassword(false);
+                  setSenhaAtual("");
+                  setNovaSenha("");
+                  setConfirmacao("");
+                }}
+              >
+                Cancelar
+              </Button>
+
+              <Button type="submit" disabled={submittingPw}>
+                {submittingPw ? "Salvando..." : "Alterar"}
+              </Button>
             </div>
           </form>
-        ) : (
-          <div className="pt-4 border-t">
-            <Button variant="outline" onClick={() => setIsEditing(true)} className="w-full gap-2">
-              <Pencil className="h-4 w-4" /> Editar Perfil
-            </Button>
-          </div>
         )}
       </div>
     </div>

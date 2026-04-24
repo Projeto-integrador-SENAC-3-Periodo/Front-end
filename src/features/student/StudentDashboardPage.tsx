@@ -333,7 +333,6 @@ function StudentSubmit() {
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
-      <h2 className="font-display font-semibold text-lg">Enviar Atividade Complementar</h2>
       <form onSubmit={handleSubmit} className="bg-card border rounded-md p-5 space-y-4">
 
         {/* Seletor de curso — só aparece se o aluno tiver mais de 1 curso */}

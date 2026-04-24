@@ -56,9 +56,9 @@ export interface ApiActivity {
   nomeAluno: string;
   idCurso: string;
   nomeCurso: string;
-  idTipoAtividade: string;
-  tipoAtividade: string;
   categoriaFixa: CategoriaFixa;
+  /** Tipo de atividade em texto livre — conforme digitado pelo aluno */
+  tipoAtividade: string;
   descricao: string;
   horasSolicitadas: number;
   horasAprovadas: number | null;
@@ -145,9 +145,8 @@ function mapAtividadeRow(a: Record<string, unknown>): ApiActivity {
     nomeAluno: String(a.nomeAluno ?? ""),
     idCurso: String(a.idCurso ?? ""),
     nomeCurso: String(a.nomeCurso ?? ""),
-    idTipoAtividade: String(a.idCurso ?? ""),
-    tipoAtividade: String(a.tipoAtividade ?? ""),
     categoriaFixa: (String(a.categoriaFixa ?? "EXTENSAO")) as CategoriaFixa,
+    tipoAtividade: String(a.tipoAtividade ?? ""),
     descricao: String(a.descricao ?? ""),
     horasSolicitadas: Number(a.horasSolicitadas ?? 0),
     horasAprovadas: a.horasAprovadas != null ? Number(a.horasAprovadas) : null,
@@ -274,7 +273,8 @@ export const tiposAtividadeApi = {
 export interface SubmeterAtividadeInput {
   idAluno: string;
   categoriaFixa: CategoriaFixa;
-  tipoAtividade?: string;
+  /** Tipo de atividade em texto livre — digitado pelo aluno */
+  tipoAtividade: string;
   descricao?: string;
   horasSolicitadas: number;
   idCurso: string;
@@ -285,19 +285,18 @@ export interface ReenviarAtividadeInput {
   atividadeId: string;
   idAluno: string;
   categoriaFixa?: CategoriaFixa;
-  idTipoAtividade?: string;
-  titulo?: string;
+  tipoAtividade?: string;
   descricao?: string;
   horasSolicitadas?: number;
   comprovante?: File;
 }
  
 export interface AvaliarAtividadeInput {
+  idTipoAtividade: any;
   atividadeId: string;
   status: "APROVADO" | "REPROVADO";
   horasAprovadas?: number;
   categoriaFixa?: CategoriaFixa;
-  idTipoAtividade?: string;
   motivoReprovacao?: string;
 }
  
@@ -333,7 +332,7 @@ export const activitiesApi = {
     const fd = new FormData();
     fd.append("idAluno", input.idAluno);
     fd.append("categoriaFixa", input.categoriaFixa);
-    if (input.tipoAtividade) fd.append("TipoAtividade", input.tipoAtividade);
+    fd.append("tipoAtividade", input.tipoAtividade);
     if (input.descricao) fd.append("descricao", input.descricao);
     fd.append("horasSolicitadas", String(input.horasSolicitadas));
     fd.append("idCurso", input.idCurso);
@@ -347,7 +346,7 @@ export const activitiesApi = {
     const fd = new FormData();
     fd.append("idAluno", input.idAluno);
     if (input.categoriaFixa) fd.append("categoriaFixa", input.categoriaFixa);
-    if (input.idTipoAtividade) fd.append("idTipoAtividade", input.idTipoAtividade);
+    if (input.tipoAtividade) fd.append("tipoAtividade", input.tipoAtividade);
     if (input.descricao) fd.append("descricao", input.descricao);
     if (input.horasSolicitadas) fd.append("horasSolicitadas", String(input.horasSolicitadas));
     if (input.comprovante) fd.append("comprovante", input.comprovante);
