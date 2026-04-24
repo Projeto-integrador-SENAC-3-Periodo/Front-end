@@ -12,50 +12,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  LayoutDashboard, Users, BookOpen, ClipboardList, Bell, FileText, Plus, Pencil, Trash2, User, Link2,
-} from "lucide-react";
+import { LayoutDashboard, Users, BookOpen, Bell, FileText, Plus, Pencil, Trash2, User, Link2 } from "lucide-react";
 import { Routes, Route, useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import {
-  usersApi,
-  coursesApi,
-  activitiesApi,
-  logsApi,
-  proofsApi,
-  pontuacaoApi,
-  tiposAtividadeApi,
-  notificacoesApi,
-  categoriaAtividadeApi,
-  userCursoApi,
-  type ApiUser,
-  type ApiCourse,
-  type ApiActivity,
-  type ApiLog,
-  type ApiNotification,
+  usersApi, coursesApi, logsApi, notificacoesApi, userCursoApi,
+  type ApiUser, type ApiCourse, type ApiLog, type ApiNotification, type UserCursoVinculo,
 } from "@/services/api";
 
-// ─── Nav Items (Sidebar) ─────────────────────────────────────────
+// ─── Nav ──────────────────────────────────────────────────────────
 const navItems: NavItem[] = [
-  { label: "Dashboard", path: "/admin", icon: LayoutDashboard },
-  { label: "Usuários", path: "/admin/users", icon: Users },
-  { label: "Cursos", path: "/admin/courses", icon: BookOpen },
-  { label: "Vínculos", path: "/admin/vinculos", icon: Link2 },
-  { label: "Atividades", path: "/admin/activities", icon: ClipboardList },
+  { label: "Dashboard",    path: "/admin",               icon: LayoutDashboard },
+  { label: "Usuários",     path: "/admin/users",         icon: Users },
+  { label: "Cursos",       path: "/admin/courses",       icon: BookOpen },
+  { label: "Vínculos",     path: "/admin/vinculos",      icon: Link2 },
   { label: "Notificações", path: "/admin/notifications", icon: Bell },
-  { label: "Logs", path: "/admin/logs", icon: FileText },
-  { label: "Perfil", path: "/admin/profile", icon: User },
+  { label: "Logs",         path: "/admin/logs",          icon: FileText },
+  { label: "Perfil",       path: "/admin/profile",       icon: User },
 ];
-
 const bottomNavItems = [
-  { label: "Dashboard", path: "/admin", icon: LayoutDashboard },
-  { label: "Usuários", path: "/admin/users", icon: Users },
-  { label: "Cursos", path: "/admin/courses", icon: BookOpen },
-  { label: "Logs", path: "/admin/logs", icon: FileText },
-  { label: "Perfil", path: "/admin/profile", icon: User },
+  { label: "Dashboard", path: "/admin",          icon: LayoutDashboard },
+  { label: "Usuários",  path: "/admin/users",    icon: Users },
+  { label: "Cursos",    path: "/admin/courses",  icon: BookOpen },
+  { label: "Vínculos",  path: "/admin/vinculos", icon: Link2 },
+  { label: "Perfil",    path: "/admin/profile",  icon: User },
 ];
-
 function BottomNav() {
   const location = useLocation();
   return (
@@ -63,11 +45,8 @@ function BottomNav() {
       {bottomNavItems.map((item) => {
         const active = location.pathname === item.path;
         return (
-          <Link
-            key={item.path}
-            to={item.path}
-            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-2 text-[10px] transition-colors ${active ? "text-senac-blue font-bold" : "text-muted-foreground"}`}
-          >
+          <Link key={item.path} to={item.path}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-2 text-[10px] transition-colors ${active ? "text-senac-blue font-bold" : "text-muted-foreground"}`}>
             <item.icon className={`h-5 w-5 ${active ? "text-senac-blue" : ""}`} />
             <span>{item.label}</span>
           </Link>
@@ -77,158 +56,77 @@ function BottomNav() {
   );
 }
 
-// ─── Dashboard ───────────────────────────────────────────────────
+// ─── Dashboard ────────────────────────────────────────────────────
 function AdminDashboard() {
   const [loading, setLoading] = useState(true);
-  const [metrics, setMetrics] = useState({ alunos: 0, cursos: 0, atividades: 0, concluidas: 0 });
-  const [logs, setLogs] = useState<ApiLog[]>([]);
+  const [counts, setCounts] = useState({ usuarios: 0, cursos: 0 });
 
   useEffect(() => {
-    Promise.all([
-      usersApi.list(),
-      coursesApi.list(),
-      activitiesApi.list(),
-      logsApi.list(),
-    ])
-      .then(([users, courses, activities, recentLogs]) => {
-        setMetrics({
-          alunos: users.filter((u) => u.role === "student").length,
-          cursos: courses.length,
-          atividades: activities.length,
-          concluidas: activities.filter((a) => a.backendStatus === "APROVADO").length,
-        });
-        setLogs(recentLogs.slice(0, 4));
-      })
-      .catch(() => toast.error("Erro ao carregar métricas"))
+    Promise.all([usersApi.list(), coursesApi.list()])
+      .then(([u, c]) => setCounts({ usuarios: u.length, cursos: c.length }))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <CardSkeleton />;
-
+  if (loading) return <CardSkeleton count={2} />;
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="Total de Alunos" value={metrics.alunos} icon={Users} />
-        <MetricCard title="Total de Cursos" value={metrics.cursos} icon={BookOpen} />
-        <MetricCard title="Atividades Cadastradas" value={metrics.atividades} icon={ClipboardList} variant="accent" />
-        <MetricCard title="Atividades Concluídas" value={metrics.concluidas} icon={ClipboardList} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <MetricCard title="Total de Usuários" value={counts.usuarios} icon={Users} />
+        <MetricCard title="Total de Cursos" value={counts.cursos} icon={BookOpen} variant="accent" />
       </div>
       <div className="bg-card border rounded-md p-5">
-        <h3 className="font-display font-semibold mb-3">Atividade Recente</h3>
-        {logs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhuma atividade recente.</p>
-        ) : (
-          <div className="space-y-3">
-            {logs.map((log, i) => (
-              <div key={i} className="flex items-start gap-3 text-sm py-2 border-b last:border-0">
-                <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
-                <div>
-                  <span>{log.action}</span>
-                  <span className="text-xs text-muted-foreground ml-2">{log.user} · {log.date}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <h3 className="font-display font-semibold mb-2">Ações rápidas</h3>
+        <div className="flex gap-3 flex-wrap">
+          <Link to="/admin/users"><Button variant="outline" size="sm" className="gap-2"><Users className="h-4 w-4" /> Gerenciar Usuários</Button></Link>
+          <Link to="/admin/courses"><Button variant="outline" size="sm" className="gap-2"><BookOpen className="h-4 w-4" /> Gerenciar Cursos</Button></Link>
+          <Link to="/admin/logs"><Button variant="outline" size="sm" className="gap-2"><FileText className="h-4 w-4" /> Ver Logs</Button></Link>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Users ───────────────────────────────────────────────────
+// ─── Users ────────────────────────────────────────────────────────
 function AdminUsers() {
   const [data, setData] = useState<ApiUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<ApiUser | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [selectedProfile, setSelectedProfile] = useState<string>("");
+  const [selectedProfile, setSelectedProfile] = useState("");
   const [formData, setFormData] = useState({ name: "", email: "", matricula: "" });
 
   const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setData(await usersApi.list());
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar usuários");
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true); setData(await usersApi.list()); setLoading(false);
   }, []);
-
   useEffect(() => { load(); }, [load]);
 
-  const openCreate = () => {
-    setEditingUser(null);
-    setFormData({ name: "", email: "", matricula: "" });
-    setSelectedProfile("");
-    setModalOpen(true);
-  };
-
-  const openEdit = (user: ApiUser) => {
-    setEditingUser(user);
-    setFormData({ name: user.name, email: user.email, matricula: user.matricula });
-    setSelectedProfile(user.role);
-    setModalOpen(true);
-  };
+  const openCreate = () => { setEditingUser(null); setFormData({ name: "", email: "", matricula: "" }); setSelectedProfile(""); setModalOpen(true); };
+  const openEdit = (u: ApiUser) => { setEditingUser(u); setFormData({ name: u.name, email: u.email, matricula: u.matricula }); setSelectedProfile(u.role); setModalOpen(true); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      if (editingUser) {
-        await usersApi.update(editingUser.id, {
-          name: formData.name,
-          email: formData.email,
-          role:
-            selectedProfile === "admin"
-              ? "admin"
-              : selectedProfile === "coordinator"
-              ? "coordinator"
-              : "student",
-          matricula: selectedProfile === "student" ? formData.matricula : "-",
-        });
-        toast.success("Usuário atualizado!");
-      } else {
-        await usersApi.create({
-          nome: formData.name,
-          email: formData.email,
-          perfil: selectedProfile === "admin" ? "ADMINISTRADOR" : selectedProfile === "coordinator" ? "COORDENADOR" : "ALUNO",
-          matricula: selectedProfile === "student" ? formData.matricula : null,
-        });
-        toast.success("Usuário criado! As credenciais foram enviadas por e-mail.");
-      }
-      setModalOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao salvar usuário");
+    const perfil = selectedProfile === "admin" ? "ADMINISTRADOR" : selectedProfile === "coordinator" ? "COORDENADOR" : "ALUNO";
+    if (editingUser) {
+      await usersApi.update(editingUser.id, { name: formData.name, email: formData.email, role: selectedProfile as ApiUser["role"], matricula: formData.matricula });
+      toast.success("Usuário atualizado!");
+    } else {
+      await usersApi.create({ nome: formData.name, email: formData.email, perfil, matricula: perfil === "ALUNO" ? formData.matricula : null });
+      toast.success("Usuário criado! A senha provisória foi enviada por email.");
     }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      await usersApi.delete(deleteId);
-      toast.success("Usuário excluído!");
-      setDeleteId(null);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao excluir usuário");
-    }
+    setModalOpen(false); load();
   };
 
   const columns: Column<ApiUser>[] = [
     { key: "name", header: "Nome" },
     { key: "email", header: "Email" },
-    { key: "profile", header: "Perfil", render: (item: ApiUser) => (
-      <span className={`badge-status ${item.profile === "Administrador" ? "bg-primary/10 text-primary" : item.profile === "Coordenador" ? "bg-accent/10 text-accent" : "bg-success/10 text-success"}`}>
-        {item.profile}
-      </span>
-    )},
+    { key: "profile", header: "Perfil" },
     { key: "matricula", header: "Matrícula" },
-    { key: "actions", header: "Ações", render: (item: ApiUser) => (
+    { key: "actions", header: "Ações", render: (u) => (
       <div className="flex gap-1">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e: React.MouseEvent) => { e.stopPropagation(); openEdit(item); }}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteId(item.id); }}><Trash2 className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openEdit(u); }}><Pencil className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteId(u.id); }}><Trash2 className="h-4 w-4" /></Button>
       </div>
     )},
   ];
@@ -239,20 +137,15 @@ function AdminUsers() {
         <h2 className="font-display font-semibold text-lg">Usuários</h2>
         <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Novo Usuário</Button>
       </div>
-
-      {loading ? <TableSkeleton columns={4} /> : data.length === 0 ? <EmptyState title="Nenhum usuário" description="Clique em 'Novo Usuário' para começar." /> : <DataTable columns={columns} data={data} />}
-
+      {loading ? <TableSkeleton columns={5} /> : data.length === 0 ? <EmptyState title="Nenhum usuário" /> : <DataTable columns={columns} data={data} />}
       <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editingUser ? "Editar Usuário" : "Novo Usuário"}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2"><Label>Nome</Label><Input placeholder="Nome completo" required value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Email</Label><Input type="email" placeholder="email@senac.br" required value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} /></div>
-          <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded p-2">
-            ℹ Uma senha provisória será gerada automaticamente e enviada por e-mail ao usuário.
-          </p>
+          <div className="space-y-2"><Label>Nome</Label><Input required value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} /></div>
+          <div className="space-y-2"><Label>Email</Label><Input type="email" required value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} /></div>
           <div className="space-y-2">
             <Label>Perfil</Label>
-            <Select value={selectedProfile} onValueChange={(v: string) => setSelectedProfile(v)} required>
-              <SelectTrigger><SelectValue placeholder="Selecione o perfil" /></SelectTrigger>
+            <Select value={selectedProfile} onValueChange={setSelectedProfile}>
+              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="admin">Administrador</SelectItem>
                 <SelectItem value="coordinator">Coordenador</SelectItem>
@@ -261,86 +154,54 @@ function AdminUsers() {
             </Select>
           </div>
           {selectedProfile === "student" && (
-            <div className="space-y-2"><Label>Matrícula</Label><Input placeholder="Ex: 2024001" required value={formData.matricula} onChange={e => setFormData(p => ({ ...p, matricula: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Matrícula</Label><Input required value={formData.matricula} onChange={e => setFormData(p => ({ ...p, matricula: e.target.value }))} /></div>
           )}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button type="submit">{editingUser ? "Salvar" : "Criar Usuário"}</Button>
+            <Button type="submit">{editingUser ? "Salvar" : "Criar"}</Button>
           </div>
         </form>
       </ModalForm>
-
-      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir Usuário" description="Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita." onConfirm={handleDelete} confirmLabel="Excluir" />
+      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir Usuário" description="Esta ação não pode ser desfeita." onConfirm={async () => { if (deleteId) { await usersApi.delete(deleteId); toast.success("Excluído!"); setDeleteId(null); load(); } }} confirmLabel="Excluir" />
     </div>
   );
 }
 
-// ─── Courses ─────────────────────────────────────────────────────
+// ─── Courses (somente ADMIN cria/edita) ───────────────────────────
 function AdminCourses() {
   const [data, setData] = useState<ApiCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ApiCourse | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ name: "", description: "", hours: "", coordinatorId: "2" });
+  const [formData, setFormData] = useState({ name: "", description: "", horasComplementares: "" });
 
   const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      // FIX: coursesApi.list() now enriches with coordinator name
-      setData(await coursesApi.list());
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar cursos");
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true); setData(await coursesApi.list()); setLoading(false);
   }, []);
-
   useEffect(() => { load(); }, [load]);
 
-  const openCreate = () => { setEditing(null); setFormData({ name: "", description: "", hours: "", coordinatorId: "2" }); setModalOpen(true); };
-  const openEdit = (c: ApiCourse) => { setEditing(c); setFormData({ name: c.name, description: c.description, hours: c.hours, coordinatorId: c.coordinatorId }); setModalOpen(true); };
+  const openCreate = () => { setEditing(null); setFormData({ name: "", description: "", horasComplementares: "" }); setModalOpen(true); };
+  const openEdit = (c: ApiCourse) => { setEditing(c); setFormData({ name: c.name, description: c.description, horasComplementares: String(c.horasComplementares) }); setModalOpen(true); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { ...formData, coordinatorName: "—" };
-    try {
-      if (editing) {
-        await coursesApi.update(editing.id, payload);
-        toast.success("Curso atualizado!");
-      } else {
-        await coursesApi.create(payload);
-        toast.success("Curso criado!");
-      }
-      setModalOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao salvar curso");
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      await coursesApi.delete(deleteId);
-      toast.success("Curso excluído!");
-      setDeleteId(null);
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
-    }
+    const payload = { name: formData.name, description: formData.description, horasComplementares: Number(formData.horasComplementares) };
+    if (editing) { await coursesApi.update(editing.id, payload); toast.success("Curso atualizado!"); }
+    else { await coursesApi.create(payload); toast.success("Curso criado!"); }
+    setModalOpen(false); load();
   };
 
   const columns: Column<ApiCourse>[] = [
     { key: "name", header: "Nome" },
     { key: "description", header: "Descrição" },
-    { key: "hours", header: "Carga Horária" },
+    { key: "horasComplementares", header: "Horas complementares", render: (c) => <span>{c.horasComplementares}h</span> },
     { key: "coordinatorName", header: "Coordenador" },
     { key: "studentCount", header: "Alunos" },
-    { key: "actions", header: "Ações", render: (item: ApiCourse) => (
+    { key: "actions", header: "Ações", render: (c) => (
       <div className="flex gap-1">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e: React.MouseEvent) => { e.stopPropagation(); openEdit(item); }}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteId(item.id); }}><Trash2 className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openEdit(c); }}><Pencil className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteId(c.id); }}><Trash2 className="h-4 w-4" /></Button>
       </div>
     )},
   ];
@@ -351,277 +212,76 @@ function AdminCourses() {
         <h2 className="font-display font-semibold text-lg">Cursos</h2>
         <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Novo Curso</Button>
       </div>
-      {loading ? <TableSkeleton columns={6} /> : data.length === 0 ? <EmptyState title="Nenhum curso" description="Crie o primeiro curso." /> : <DataTable columns={columns} data={data} />}
-
+      {loading ? <TableSkeleton columns={5} /> : data.length === 0 ? <EmptyState title="Nenhum curso" /> : <DataTable columns={columns} data={data} />}
       <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Editar Curso" : "Novo Curso"}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2"><Label>Nome</Label><Input placeholder="Nome do curso" required value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Descrição</Label><Textarea placeholder="Descrição" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Carga Horária</Label><Input placeholder="Ex: 120h" required value={formData.hours} onChange={e => setFormData(p => ({ ...p, hours: e.target.value }))} /></div>
+          <div className="space-y-2"><Label>Nome *</Label><Input required value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} /></div>
+          <div className="space-y-2"><Label>Descrição</Label><Textarea value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
+          <div className="space-y-2">
+            <Label>Horas complementares (teto) *</Label>
+            <Input type="number" min="1" placeholder="Ex: 100" required value={formData.horasComplementares} onChange={e => setFormData(p => ({ ...p, horasComplementares: e.target.value }))} />
+            <p className="text-xs text-muted-foreground">Quantidade máxima de horas que o aluno pode acumular neste curso.</p>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
             <Button type="submit">{editing ? "Salvar" : "Criar Curso"}</Button>
           </div>
         </form>
       </ModalForm>
-
-      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir Curso" description="Tem certeza? Atividades vinculadas serão removidas." onConfirm={handleDelete} confirmLabel="Excluir" />
+      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir Curso" description="Todas as atividades vinculadas serão removidas." onConfirm={async () => { if (deleteId) { await coursesApi.delete(deleteId); toast.success("Excluído!"); setDeleteId(null); load(); } }} confirmLabel="Excluir" />
     </div>
   );
 }
 
-// ─── Activities ──────────────────────────────────────────────────
-const statusAtividadePt: Record<string, string> = {
-  PENDENTE: "Pendente",
-  APROVADO: "Aprovado",
-  REPROVADO: "Reprovado",
-};
-
-function AdminActivities() {
-  const [data, setData] = useState<ApiActivity[]>([]);
-  const [coursesList, setCoursesList] = useState<ApiCourse[]>([]);
-  const [tipos, setTipos] = useState<{ id: string; nome: string }[]>([]);
-  const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<ApiActivity | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    courseId: "",
-    tipoAtividadeId: "",
-    categoriaId: "",
-    points: "",
-    horas: "",
-  });
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [acts, courses, t, cats] = await Promise.all([
-        activitiesApi.list(),
-        coursesApi.list(),
-        tiposAtividadeApi.list(),
-        categoriaAtividadeApi.list(),
-      ]);
-      setData(acts);
-      setCoursesList(courses);
-      setTipos(t.map((x) => ({ id: x.id, nome: x.nome })));
-      setCategorias(cats.map((x) => ({ id: x.id, nome: x.nome })));
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar atividades");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const openCreate = () => {
-    setEditing(null);
-    setFormData({ title: "", description: "", courseId: "", tipoAtividadeId: "", categoriaId: "", points: "", horas: "" });
-    setModalOpen(true);
-  };
-
-  const openEdit = (a: ApiActivity) => {
-    setEditing(a);
-    setFormData({
-      title: a.title,
-      description: a.description,
-      courseId: a.courseId,
-      tipoAtividadeId: a.idTipoAtividade ?? "",
-      categoriaId: "",
-      points: String(a.points),
-      horas: a.horasSolicitadas != null ? String(a.horasSolicitadas) : "",
-    });
-    setModalOpen(true);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const pts = Number(formData.points);
-    const horas = formData.horas.trim() ? Number(formData.horas) : undefined;
-    const payload = {
-      title: formData.title,
-      description: formData.description,
-      courseId: formData.courseId,
-      tipoAtividadeId: formData.tipoAtividadeId,
-      points: pts,
-      horasSolicitadas: horas,
-    };
-    try {
-      if (editing) {
-        await activitiesApi.update(editing.id, payload);
-        toast.success("Atividade atualizada!");
-      } else {
-        await activitiesApi.create(payload);
-        toast.success("Atividade criada!");
-      }
-      setModalOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao salvar atividade");
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      await activitiesApi.delete(deleteId);
-      toast.success("Atividade excluída!");
-      setDeleteId(null);
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
-    }
-  };
-
-  const columns: Column<ApiActivity>[] = [
-    { key: "title", header: "Nome" },
-    { key: "nomeAluno", header: "Aluno", render: (item: ApiActivity) => <span>{item.nomeAluno || "—"}</span> },
-    { key: "courseName", header: "Curso" },
-    { key: "category", header: "Tipo" },
-    { key: "points", header: "Pontos" },
-    {
-      key: "backendStatus",
-      header: "Status",
-      render: (item: ApiActivity) => (
-        <span>{statusAtividadePt[item.backendStatus ?? ""] ?? item.backendStatus ?? "—"}</span>
-      ),
-    },
-    { key: "actions", header: "Ações", render: (item: ApiActivity) => (
-      <div className="flex gap-1">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(ev: React.MouseEvent) => { ev.stopPropagation(); openEdit(item); }}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(ev: React.MouseEvent) => { ev.stopPropagation(); setDeleteId(item.id); }}><Trash2 className="h-4 w-4" /></Button>
-      </div>
-    )},
-  ];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display font-semibold text-lg">Atividades</h2>
-        <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Nova Atividade</Button>
-      </div>
-      {loading ? <TableSkeleton columns={7} /> : data.length === 0 ? <EmptyState title="Nenhuma atividade" /> : <DataTable columns={columns} data={data} />}
-
-      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Editar Atividade" : "Nova Atividade"}>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2"><Label>Título</Label><Input placeholder="Título" required value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Descrição</Label><Textarea placeholder="Descrição" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
-          <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded p-2">
-            O aluno seleciona esta atividade ao enviar o comprovante. Aqui você cadastra o modelo disponível para o curso.
-          </p>
-          <div className="space-y-2">
-            <Label>Curso</Label>
-            <Select value={formData.courseId} onValueChange={(v: string) => setFormData(p => ({ ...p, courseId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-              <SelectContent>{coursesList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Tipo de atividade</Label>
-            <Select value={formData.tipoAtividadeId} onValueChange={(v: string) => setFormData(p => ({ ...p, tipoAtividadeId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Selecione o tipo (cadastre em /tipos-atividade)" /></SelectTrigger>
-              <SelectContent>{tipos.map((t) => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Categoria</Label>
-            <Select value={formData.categoriaId} onValueChange={(v: string) => setFormData(p => ({ ...p, categoriaId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Selecione a categoria (opcional)" /></SelectTrigger>
-              <SelectContent>{categorias.map((cat) => <SelectItem key={cat.id} value={cat.id}>{cat.nome}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2"><Label>Horas solicitadas (opcional)</Label><Input type="number" min={0} placeholder="Ex: 8" value={formData.horas} onChange={e => setFormData(p => ({ ...p, horas: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Pontos</Label><Input type="number" min={0} placeholder="Ex: 10" required value={formData.points} onChange={e => setFormData(p => ({ ...p, points: e.target.value }))} /></div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button type="submit">{editing ? "Salvar" : "Criar Atividade"}</Button>
-          </div>
-        </form>
-      </ModalForm>
-
-      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir Atividade" description="Tem certeza que deseja excluir esta atividade?" onConfirm={handleDelete} confirmLabel="Excluir" />
-    </div>
-  );
-}
-
-// ─── Notifications ───────────────────────────────────────────────
+// ─── Notifications ────────────────────────────────────────────────
 function AdminNotifications() {
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<ApiNotification[]>([])
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
-    notificacoesApi
-      .list(user.id)
-      .then((list) => {
-        setNotifications(list);
-      })
-      .catch(() => toast.error("Erro ao carregar notificações"))
+    if (!user?.id) { setLoading(false); return; }
+    notificacoesApi.list(user.id)
+      .then(setNotifications).catch(() => toast.error("Erro ao carregar notificações"))
       .finally(() => setLoading(false));
   }, [user?.id]);
 
   const markAsRead = async (id: number) => {
-    try {
-      await notificacoesApi.marcarLida(id);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-      toast.success("Notificação marcada como lida");
-    } catch {
-      toast.error("Não foi possível atualizar");
-    }
+    try { await notificacoesApi.marcarLida(id); setNotifications(p => p.map(n => n.id === id ? { ...n, read: true } : n)); }
+    catch { toast.error("Não foi possível atualizar"); }
   };
 
-  if (loading) return <TableSkeleton columns={1} />;
-
+  if (loading) return <CardSkeleton count={2} />;
   return (
     <div className="space-y-4">
       <h2 className="font-display font-semibold text-lg">Notificações</h2>
-      {notifications.length === 0 ? (
-        <EmptyState title="Nenhuma notificação" description="Você está em dia!" />
-      ) : (
-        <div className="bg-card border rounded-md divide-y">
-          {notifications.map((n) => (
-            <div key={n.id} className={`flex items-center justify-between p-4 ${!n.read ? "bg-primary/5" : ""}`}>
-              <div className="flex items-center gap-3">
-                {!n.read && <div className="w-2 h-2 rounded-full bg-accent shrink-0" />}
-                <div>
-                  <p className="text-sm font-medium">{n.titulo}</p>
-                  <p className="text-xs text-muted-foreground">{n.mensagem}</p>
+      {notifications.length === 0
+        ? <EmptyState title="Nenhuma notificação" />
+        : <div className="bg-card border rounded-md divide-y">
+            {notifications.map((n) => (
+              <div key={n.id} className={`flex items-center justify-between p-4 ${!n.read ? "bg-primary/5" : ""}`}>
+                <div className="flex items-center gap-3">
+                  {!n.read && <div className="w-2 h-2 rounded-full bg-accent shrink-0" />}
+                  <div>
+                    <p className="text-sm font-medium">{n.titulo}</p>
+                    <p className="text-xs text-muted-foreground">{n.mensagem}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{n.time}</p>
+                  </div>
                 </div>
+                {!n.read && <Button variant="ghost" size="sm" className="text-xs shrink-0" onClick={() => markAsRead(n.id)}>Marcar lida</Button>}
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground whitespace-nowrap ml-4">{n.time}</span>
-                {!n.read && (
-                  <Button variant="ghost" size="sm" className="text-xs" onClick={() => markAsRead(n.id)}>Marcar como lida</Button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>}
     </div>
   );
 }
 
-// ─── Logs ────────────────────────────────────────────────────────
+// ─── Logs ─────────────────────────────────────────────────────────
 function AdminLogs() {
   const [data, setData] = useState<ApiLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    logsApi
-      .list()
-      .then((d) => setData(d))
-      .catch((e) => toast.error(e instanceof Error ? e.message : "Erro ao carregar logs"))
-      .finally(() => setLoading(false));
-  }, []);
+  useEffect(() => { logsApi.list().then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false)); }, []);
 
   const columns: Column<ApiLog>[] = [
     { key: "action", header: "Ação" },
@@ -637,185 +297,7 @@ function AdminLogs() {
   );
 }
 
-// ─── Vínculos (Coordenador ↔ Curso) ─────────────────────────────
-interface VinculoRow {
-  id: string;
-  userId: string;
-  userName: string;
-  userEmail: string;
-  cursoId: string;
-  cursoName: string;
-  papel: string;
-  dataMatricula: string;
-}
-
-function AdminVinculos() {
-  const [vinculos, setVinculos] = useState<VinculoRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [coordenadores, setCoordenadores] = useState<ApiUser[]>([]);
-  const [cursos, setCursos] = useState<ApiCourse[]>([]);
-  const [selCoord, setSelCoord] = useState("");
-  const [selCurso, setSelCurso] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [userList, courseList] = await Promise.all([usersApi.list(), coursesApi.list()]);
-      setCoordenadores(userList.filter((u) => u.role === "coordinator"));
-      setCursos(courseList);
-
-      // FIX: Use listarTodos to get all vinculos, then filter by COORDENADOR role
-      const allVinculos = await Promise.all(
-        courseList.map(async (c) => {
-          try {
-            const raw = await userCursoApi.listarTodos(c.id);
-            return raw.map((r) => ({ ...r, cursoId: c.id, cursoName: c.name }));
-          } catch {
-            return [];
-          }
-        })
-      );
-
-      const coordVinculos: VinculoRow[] = [];
-
-      for (const courseVinculos of allVinculos) {
-        for (const v of courseVinculos) {
-          // FIX: Filter by papel field from the backend response instead of cross-referencing
-          if (v.papel === "COORDENADOR") {
-            coordVinculos.push({
-              id: `${v.id}-${v.cursoId}`,
-              userId: v.id,
-              userName: v.nome,
-              userEmail: v.email,
-              cursoId: v.cursoId,
-              cursoName: v.cursoName,
-              papel: "COORDENADOR",
-              dataMatricula: "",
-            });
-          }
-        }
-      }
-
-      setVinculos(coordVinculos);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar vínculos");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleVincular = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selCoord || !selCurso) return;
-    try {
-      await userCursoApi.vincularCoordenador(selCurso, selCoord);
-      toast.success("Coordenador vinculado ao curso!");
-      setModalOpen(false);
-      setSelCoord("");
-      setSelCurso("");
-      // FIX: Reload vinculos AND courses so the Cursos tab updates too
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao vincular coordenador");
-    }
-  };
-
-  const handleDesvincular = async (userId: string, cursoId: string) => {
-    try {
-      await userCursoApi.desvincular(cursoId, userId);
-      toast.success("Coordenador desvinculado do curso!");
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao desvincular");
-    }
-  };
-
-  const columns: Column<VinculoRow>[] = [
-    { key: "userName", header: "Coordenador" },
-    { key: "userEmail", header: "Email" },
-    { key: "cursoName", header: "Curso" },
-    {
-      key: "actions",
-      header: "Ações",
-      render: (item: VinculoRow) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-destructive"
-          title="Desvincular coordenador"
-          onClick={() => handleDesvincular(item.userId, item.cursoId)}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      ),
-    },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display font-semibold text-lg">Vínculos Coordenador ↔ Curso</h2>
-        <Button onClick={() => setModalOpen(true)} className="gap-2">
-          <Plus className="h-4 w-4" /> Vincular Coordenador
-        </Button>
-      </div>
-      {loading ? (
-        <TableSkeleton columns={4} />
-      ) : vinculos.length === 0 ? (
-        <EmptyState title="Nenhum vínculo" description="Vincule coordenadores aos cursos." />
-      ) : (
-        <DataTable columns={columns} data={vinculos} />
-      )}
-      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title="Vincular Coordenador ao Curso">
-        <form onSubmit={handleVincular} className="space-y-4">
-          <div className="space-y-2">
-            <Label>Coordenador</Label>
-            <Select value={selCoord} onValueChange={setSelCoord}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o coordenador" />
-              </SelectTrigger>
-              <SelectContent>
-                {coordenadores.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.name} ({u.email})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Curso</Label>
-            <Select value={selCurso} onValueChange={setSelCurso}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o curso" />
-              </SelectTrigger>
-              <SelectContent>
-                {cursos.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={!selCoord || !selCurso}>
-              Vincular
-            </Button>
-          </div>
-        </form>
-      </ModalForm>
-    </div>
-  );
-}
-
-// ─── Profile Component ───────────
+// ─── Profile ─────────────────────────────────────────────────────
 function AdminProfile() {
   const { user, updateProfile } = useAuth();
   const [editing, setEditing] = useState(false);
@@ -827,36 +309,18 @@ function AdminProfile() {
   const [submittingPw, setSubmittingPw] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateProfile({ name });
-    toast.success("Perfil atualizado!");
-    setEditing(false);
+    e.preventDefault(); updateProfile({ name }); toast.success("Perfil atualizado!"); setEditing(false);
   };
-
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (novaSenha !== confirmacao) {
-      toast.error("A nova senha e a confirmação não coincidem.");
-      return;
-    }
-    if (novaSenha.length < 8) {
-      toast.error("A nova senha deve ter no mínimo 8 caracteres.");
-      return;
-    }
+    if (novaSenha !== confirmacao) { toast.error("As senhas não coincidem"); return; }
     setSubmittingPw(true);
     try {
       const { authApi } = await import("@/services/api");
       await authApi.changePassword(senhaAtual, novaSenha, confirmacao);
-      toast.success("Senha alterada com sucesso!");
-      setChangingPassword(false);
-      setSenhaAtual("");
-      setNovaSenha("");
-      setConfirmacao("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao alterar senha");
-    } finally {
-      setSubmittingPw(false);
-    }
+      toast.success("Senha alterada!"); setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao("");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Erro"); }
+    finally { setSubmittingPw(false); }
   };
 
   return (
@@ -864,47 +328,33 @@ function AdminProfile() {
       <h2 className="font-display font-semibold text-lg mb-4">Meu Perfil</h2>
       <div className="bg-card border rounded-md p-5 space-y-4">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-senac-blue flex items-center justify-center text-white text-xl font-bold">
-            {user?.name?.charAt(0)}
-          </div>
+          <div className="w-16 h-16 rounded-full bg-senac-blue flex items-center justify-center text-white text-xl font-bold">{user?.name?.charAt(0)}</div>
           <div>
             <p className="font-display font-semibold">{user?.name}</p>
             <p className="text-sm text-muted-foreground">{user?.email}</p>
-            <p className="text-xs text-muted-foreground">Perfil: Administrador</p>
+            <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">Administrador</span>
           </div>
         </div>
         {editing ? (
-          <form onSubmit={handleSave} className="space-y-4 pt-4 border-t">
-            <div className="space-y-2"><Label>Nome</Label><Input value={name} onChange={e => setName(e.target.value)} required /></div>
+          <form onSubmit={handleSave} className="space-y-3 pt-4 border-t">
+            <div className="space-y-1"><Label>Nome</Label><Input value={name} onChange={e => setName(e.target.value)} required /></div>
             <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancelar</Button><Button type="submit">Salvar</Button></div>
           </form>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2 pt-4 border-t">
             <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>
             <Button variant="outline" onClick={() => setChangingPassword(true)} className="w-full">Alterar Senha</Button>
           </div>
         )}
-
         {changingPassword && (
-          <form onSubmit={handleChangePassword} className="space-y-4 pt-4 border-t">
-            <h3 className="font-display font-semibold text-base">Alterar Senha</h3>
-            <div className="space-y-2">
-              <Label>Senha Atual</Label>
-              <Input type="password" placeholder="••••••••" required value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Nova Senha</Label>
-              <Input type="password" placeholder="Mínimo 8 caracteres" required value={novaSenha} onChange={e => setNovaSenha(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Confirmar Nova Senha</Label>
-              <Input type="password" placeholder="••••••••" required value={confirmacao} onChange={e => setConfirmacao(e.target.value)} />
-            </div>
+          <form onSubmit={handleChangePassword} className="space-y-3 pt-4 border-t">
+            <h3 className="font-semibold">Alterar Senha</h3>
+            <div className="space-y-1"><Label>Senha Atual</Label><Input type="password" required value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} /></div>
+            <div className="space-y-1"><Label>Nova Senha</Label><Input type="password" placeholder="Mínimo 8 caracteres" required value={novaSenha} onChange={e => setNovaSenha(e.target.value)} /></div>
+            <div className="space-y-1"><Label>Confirmar</Label><Input type="password" required value={confirmacao} onChange={e => setConfirmacao(e.target.value)} /></div>
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={() => { setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao(""); }}>Cancelar</Button>
-              <Button type="submit" disabled={submittingPw}>
-                {submittingPw ? "Salvando..." : "Alterar Senha"}
-              </Button>
+              <Button type="submit" disabled={submittingPw}>{submittingPw ? "Salvando..." : "Alterar"}</Button>
             </div>
           </form>
         )}
@@ -913,13 +363,220 @@ function AdminProfile() {
   );
 }
 
-// ─── Router & Title Map ────────────────────────
+// ─── Vínculos (Alunos e Coordenadores por Curso) ─────────────────
+function AdminVinculos() {
+  const [tab, setTab] = useState<"aluno" | "coordenador">("aluno");
+  const [cursos, setCursos] = useState<ApiCourse[]>([]);
+  const [usuarios, setUsuarios] = useState<ApiUser[]>([]);
+  const [membros, setMembros] = useState<UserCursoVinculo[]>([]);
+  const [selectedCurso, setSelectedCurso] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadingMembros, setLoadingMembros] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ userId: string; nome: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Carrega cursos e usuários na montagem
+  useEffect(() => {
+    Promise.all([coursesApi.list(), usersApi.list()])
+      .then(([c, u]) => { setCursos(c); setUsuarios(u); })
+      .catch(() => toast.error("Erro ao carregar dados"));
+  }, []);
+
+  // Recarrega membros quando curso ou tab mudam
+  useEffect(() => {
+    if (!selectedCurso) { setMembros([]); return; }
+    setLoadingMembros(true);
+    userCursoApi.listarTodos(selectedCurso)
+      .then((all) => setMembros(all.filter((m) => m.papel === (tab === "aluno" ? "ALUNO" : "COORDENADOR"))))
+      .catch(() => toast.error("Erro ao carregar membros"))
+      .finally(() => setLoadingMembros(false));
+  }, [selectedCurso, tab]);
+
+  const recarregarMembros = () => {
+    if (!selectedCurso) return;
+    setLoadingMembros(true);
+    userCursoApi.listarTodos(selectedCurso)
+      .then((all) => setMembros(all.filter((m) => m.papel === (tab === "aluno" ? "ALUNO" : "COORDENADOR"))))
+      .finally(() => setLoadingMembros(false));
+  };
+
+  const handleVincular = async () => {
+    if (!selectedCurso || !selectedUser) return;
+    setSubmitting(true);
+    try {
+      if (tab === "aluno") {
+        await userCursoApi.vincular(selectedCurso, selectedUser);
+        toast.success("Aluno vinculado ao curso!");
+      } else {
+        await userCursoApi.vincularCoordenador(selectedCurso, selectedUser);
+        toast.success("Coordenador vinculado ao curso!");
+      }
+      setModalOpen(false);
+      setSelectedUser("");
+      recarregarMembros();
+      // Recarrega cursos para atualizar nome do coordenador na listagem
+      coursesApi.list().then(setCursos).catch(() => {});
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao vincular");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDesvincular = async () => {
+    if (!deleteTarget || !selectedCurso) return;
+    try {
+      await userCursoApi.desvincular(selectedCurso, deleteTarget.userId);
+      toast.success("Vínculo removido!");
+      setDeleteTarget(null);
+      recarregarMembros();
+      coursesApi.list().then(setCursos).catch(() => {});
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao desvincular");
+    }
+  };
+
+  // Usuários disponíveis para vincular (filtra quem já está vinculado)
+  const membroIds = new Set(membros.map((m) => m.id));
+  const papel = tab === "aluno" ? "student" : "coordinator";
+  const disponiveis = usuarios.filter((u) => u.role === papel && !membroIds.has(u.id));
+
+  const cursoSelecionado = cursos.find((c) => c.id === selectedCurso);
+
+  type Row = UserCursoVinculo;
+  const columns: Column<Row>[] = [
+    { key: "nome", header: "Nome" },
+    { key: "email", header: "Email" },
+    ...(tab === "aluno" ? [{ key: "matricula" as keyof Row, header: "Matrícula", render: (r: Row) => <span>{r.matricula ?? "—"}</span> }] : []),
+    { key: "actions", header: "Ações", render: (r: Row) => (
+      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteTarget({ userId: r.id, nome: r.nome })}>
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    )},
+  ];
+
+  return (
+    <div className="space-y-5">
+      <h2 className="font-display font-semibold text-lg">Vínculos de Curso</h2>
+
+      {/* Seletor de curso */}
+      <div className="space-y-2">
+        <Label>Selecione o curso</Label>
+        <Select value={selectedCurso} onValueChange={setSelectedCurso}>
+          <SelectTrigger className="max-w-sm"><SelectValue placeholder="Escolha um curso..." /></SelectTrigger>
+          <SelectContent>
+            {cursos.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name} {c.coordinatorName !== "—" ? `(Coord: ${c.coordinatorName})` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {selectedCurso && (
+        <>
+          {/* Sub-tabs */}
+          <div className="flex gap-1 border-b">
+            {(["aluno", "coordenador"] as const).map((t) => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t ? "border-senac-blue text-senac-blue" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+                {t === "aluno" ? "Alunos" : "Coordenador"}
+              </button>
+            ))}
+          </div>
+
+          {/* Info do curso */}
+          {cursoSelecionado && (
+            <div className="bg-muted/30 rounded-md px-4 py-2 text-sm flex flex-wrap gap-4">
+              <span><strong>{cursoSelecionado.name}</strong></span>
+              <span className="text-muted-foreground">{cursoSelecionado.horasComplementares}h complementares</span>
+              <span className="text-muted-foreground">Coordenador: {cursoSelecionado.coordinatorName}</span>
+              <span className="text-muted-foreground">{cursoSelecionado.studentCount} alunos</span>
+            </div>
+          )}
+
+          {/* Tabela de membros + botão vincular */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">
+                {tab === "aluno" ? `${membros.length} aluno(s) vinculado(s)` : membros.length > 0 ? "Coordenador vinculado" : "Sem coordenador"}
+              </p>
+              <Button size="sm" className="gap-2" onClick={() => { setSelectedUser(""); setModalOpen(true); }}
+                disabled={tab === "coordenador" && membros.length > 0}>
+                <Plus className="h-4 w-4" />
+                {tab === "aluno" ? "Vincular Aluno" : "Vincular Coordenador"}
+              </Button>
+            </div>
+            {tab === "coordenador" && membros.length > 0 && (
+              <p className="text-xs text-amber-600">Para trocar o coordenador, primeiro desvincule o atual.</p>
+            )}
+            {loadingMembros
+              ? <TableSkeleton columns={3} />
+              : membros.length === 0
+                ? <EmptyState title={tab === "aluno" ? "Nenhum aluno vinculado" : "Sem coordenador"} description={tab === "aluno" ? "Clique em 'Vincular Aluno' para adicionar." : "Clique em 'Vincular Coordenador' para definir."} />
+                : <DataTable columns={columns} data={membros} />}
+          </div>
+        </>
+      )}
+
+      {!selectedCurso && (
+        <EmptyState title="Selecione um curso" description="Escolha um curso acima para gerenciar os vínculos." />
+      )}
+
+      {/* Modal vincular */}
+      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={tab === "aluno" ? "Vincular Aluno ao Curso" : "Vincular Coordenador ao Curso"}>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>{tab === "aluno" ? "Aluno" : "Coordenador"}</Label>
+            <Select value={selectedUser} onValueChange={setSelectedUser}>
+              <SelectTrigger><SelectValue placeholder={`Selecione o ${tab === "aluno" ? "aluno" : "coordenador"}`} /></SelectTrigger>
+              <SelectContent>
+                {disponiveis.length === 0
+                  ? <SelectItem value="_empty" disabled>Nenhum disponível</SelectItem>
+                  : disponiveis.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name} {u.matricula && u.matricula !== "-" ? `(${u.matricula})` : ""} — {u.email}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            {disponiveis.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                {tab === "aluno" ? "Todos os alunos já estão vinculados a este curso." : "Todos os coordenadores já estão vinculados."}
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
+            <Button onClick={handleVincular} disabled={!selectedUser || selectedUser === "_empty" || submitting}>
+              {submitting ? "Vinculando..." : "Vincular"}
+            </Button>
+          </div>
+        </div>
+      </ModalForm>
+
+      {/* Confirmar desvínculo */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={() => setDeleteTarget(null)}
+        title={`Desvincular ${tab === "aluno" ? "aluno" : "coordenador"}`}
+        description={`Tem certeza que deseja desvincular "${deleteTarget?.nome}" deste curso?`}
+        onConfirm={handleDesvincular}
+        confirmLabel="Desvincular"
+      />
+    </div>
+  );
+}
+
+// ─── Router ───────────────────────────────────────────────────────
 const titleMap: Record<string, string> = {
   "/admin": "Dashboard",
   "/admin/users": "Usuários",
   "/admin/courses": "Cursos",
   "/admin/vinculos": "Vínculos",
-  "/admin/activities": "Atividades",
   "/admin/notifications": "Notificações",
   "/admin/logs": "Logs do Sistema",
   "/admin/profile": "Perfil",
@@ -927,18 +584,15 @@ const titleMap: Record<string, string> = {
 
 export default function AdminDashboardPage() {
   const location = useLocation();
-  const title = titleMap[location.pathname] || "Dashboard";
-
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardLayout navItems={navItems} title={title}>
+      <DashboardLayout navItems={navItems} title={titleMap[location.pathname] || "Dashboard"}>
         <div className="pb-24 lg:pb-8 px-4">
           <Routes>
             <Route index element={<AdminDashboard />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="courses" element={<AdminCourses />} />
             <Route path="vinculos" element={<AdminVinculos />} />
-            <Route path="activities" element={<AdminActivities />} />
             <Route path="notifications" element={<AdminNotifications />} />
             <Route path="logs" element={<AdminLogs />} />
             <Route path="profile" element={<AdminProfile />} />

@@ -3,7 +3,6 @@ import { DashboardLayout, type NavItem } from "@/components/layout/DashboardLayo
 import { MetricCard } from "@/components/shared/MetricCard";
 import { DataTable, type Column } from "@/components/shared/DataTable";
 import { ModalForm } from "@/components/shared/ModalForm";
-import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { TableSkeleton } from "@/components/shared/TableSkeleton";
 import { CardSkeleton } from "@/components/shared/CardSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -14,47 +13,30 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  LayoutDashboard, BookOpen, Users, ClipboardList, FileCheck, Award, Bell, Plus, Pencil, Trash2, Eye, Check, X, User, Download,
+  LayoutDashboard, Users, ClipboardList, FileCheck, Bell, Check, X, Eye, User, Pencil, Clock, AlertCircle, CheckCircle,
 } from "lucide-react";
 import { Routes, Route, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  coursesApi,
-  activitiesApi,
-  proofsApi,
-  tiposAtividadeApi,
-  userCursoApi,
-  categoriaAtividadeApi,
-  certificadosApi,
-  usersApi,
-  type ApiNotification,
-  notificacoesApi,
-  type ApiCourse,
-  type ApiActivity,
-  type ApiProof,
-  type ApiUser,
-  type ApiCertificate,
+  activitiesApi, userCursoApi, notificacoesApi, tiposAtividadeApi,
+  type ApiActivity, type ApiNotification, type TipoAtividade, type CategoriaFixa, type UserCursoVinculo,
 } from "@/services/api";
 
-// ─── Nav Items (Sidebar) ─────────────────────────────────────────
+// ─── Nav ──────────────────────────────────────────────────────────
 const navItems: NavItem[] = [
-  { label: "Dashboard", path: "/coordinator", icon: LayoutDashboard },
-  { label: "Cursos", path: "/coordinator/courses", icon: BookOpen },
-  { label: "Alunos", path: "/coordinator/students", icon: Users },
-  { label: "Atividades", path: "/coordinator/activities", icon: ClipboardList },
-  { label: "Comprovações", path: "/coordinator/proofs", icon: FileCheck },
-  { label: "Certificados", path: "/coordinator/certificates", icon: Award },
-  { label: "Notificações", path: "/coordinator/notifications", icon: Bell },
-  { label: "Perfil", path: "/coordinator/profile", icon: User },
+  { label: "Dashboard",    path: "/coordinator",              icon: LayoutDashboard },
+  { label: "Alunos",       path: "/coordinator/students",     icon: Users },
+  { label: "Atividades",   path: "/coordinator/activities",   icon: ClipboardList },
+  { label: "Avaliar",      path: "/coordinator/proofs",       icon: FileCheck },
+  { label: "Notificações", path: "/coordinator/notifications",icon: Bell },
+  { label: "Perfil",       path: "/coordinator/profile",      icon: User },
 ];
-
 const bottomNavItems = [
-  { label: "Dashboard", path: "/coordinator", icon: LayoutDashboard },
-  { label: "Cursos", path: "/coordinator/courses", icon: BookOpen },
-  { label: "Comprovações", path: "/coordinator/proofs", icon: FileCheck },
+  { label: "Dashboard",    path: "/coordinator",               icon: LayoutDashboard },
+  { label: "Avaliar",      path: "/coordinator/proofs",        icon: FileCheck },
   { label: "Notificações", path: "/coordinator/notifications", icon: Bell },
-  { label: "Perfil", path: "/coordinator/profile", icon: User },
+  { label: "Perfil",       path: "/coordinator/profile",       icon: User },
 ];
 
 function BottomNav() {
@@ -64,11 +46,8 @@ function BottomNav() {
       {bottomNavItems.map((item) => {
         const active = location.pathname === item.path;
         return (
-          <Link
-            key={item.path}
-            to={item.path}
-            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-2 text-[10px] transition-colors ${active ? "text-senac-blue font-bold" : "text-muted-foreground"}`}
-          >
+          <Link key={item.path} to={item.path}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-2 text-[10px] transition-colors ${active ? "text-senac-blue font-bold" : "text-muted-foreground"}`}>
             <item.icon className={`h-5 w-5 ${active ? "text-senac-blue" : ""}`} />
             <span>{item.label}</span>
           </Link>
@@ -78,637 +57,325 @@ function BottomNav() {
   );
 }
 
-// ─── Dashboard ───────────────────────────────────────────────────
+// ─── Hook: cursos do coordenador ──────────────────────────────────
+function useMeusCursos(userId: string | undefined) {
+  const [cursoIds, setCursoIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!userId) { setLoading(false); return; }
+    userCursoApi.listarCursosDoAluno(userId)
+      .then((c) => setCursoIds(c.map((x) => x.id)))
+      .finally(() => setLoading(false));
+  }, [userId]);
+  return { cursoIds, loading };
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────
 function CoordDashboard() {
   const { user } = useAuth();
+  const { cursoIds } = useMeusCursos(user?.id);
   const [loading, setLoading] = useState(true);
-  const [metrics, setMetrics] = useState({ cursos: 0, alunos: 0, pendentes: 0, certificados: 0 });
+  const [pendentes, setPendentes] = useState(0);
+  const [alunos, setAlunos] = useState(0);
+  const [recent, setRecent] = useState<ApiActivity[]>([]);
 
   useEffect(() => {
-    if (!user?.id) return;
-    coursesApi.list()
-      .then(async (courses) => {
-        // FIX: Use listarAlunos which now filters only ALUNO role
-        const alunosPorCurso = await Promise.all(courses.map((c) => userCursoApi.listarAlunos(c.id).catch(() => [])));
-        const alunos = alunosPorCurso.flat();
-        const ids = [...new Set(alunos.map((a) => a.id))];
-        const [proofs, certs] = await Promise.all([
-          proofsApi.list(),
-          Promise.all(ids.map((id) => certificadosApi.listByAluno(id).catch((): ApiCertificate[] => []))),
+    if (!cursoIds.length) { setLoading(false); return; }
+    (async () => {
+      try {
+        const [pendArr, alunosArr] = await Promise.all([
+          Promise.all(cursoIds.map((id) => activitiesApi.listPendingByCourse(id).catch(() => [] as ApiActivity[]))),
+          Promise.all(cursoIds.map((id) => userCursoApi.listarAlunos(id).catch(() => [] as UserCursoVinculo[]))),
         ]);
-        setMetrics({
-          cursos: courses.length,
-          alunos: ids.length,
-          pendentes: proofs.filter((p) => p.status === "pending").length,
-          certificados: certs.flat().length,
-        });
-      })
-      .catch(() => toast.error("Erro ao carregar métricas"))
-      .finally(() => setLoading(false));
-  }, [user?.id]);
+        const allPend = pendArr.flat();
+        setPendentes(allPend.length);
+        setAlunos(new Set(alunosArr.flat().map((a) => a.id)).size);
+        setRecent(allPend.slice(0, 5));
+      } finally { setLoading(false); }
+    })();
+  }, [cursoIds]);
 
-  if (loading) return <CardSkeleton />;
-
+  if (loading) return <CardSkeleton count={3} />;
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="Cursos ativos" value={metrics.cursos} icon={BookOpen} />
-        <MetricCard title="Alunos vinculados" value={metrics.alunos} icon={Users} />
-        <MetricCard title="Comprovantes pendentes" value={metrics.pendentes} icon={FileCheck} variant="accent" />
-        <MetricCard title="Certificados emitidos" value={metrics.certificados} icon={Award} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <MetricCard title="Alunos vinculados" value={alunos} icon={Users} />
+        <MetricCard title="Atividades pendentes" value={pendentes} icon={FileCheck} variant="accent" />
+      </div>
+      <div className="bg-card border rounded-md p-5">
+        <h3 className="font-display font-semibold mb-3">Atividades aguardando avaliação</h3>
+        {recent.length === 0
+          ? <p className="text-sm text-muted-foreground">Nenhuma atividade pendente.</p>
+          : recent.map((a) => (
+            <div key={a.id} className="flex items-center justify-between py-2 border-b last:border-0">
+              <div>
+                <p className="text-sm font-medium">{a.tipoAtividade}</p>
+                <p className="text-xs text-muted-foreground">{a.nomeAluno} · {a.nomeCurso} · {a.horasSolicitadas}h</p>
+              </div>
+              <Link to="/coordinator/proofs"><Button size="sm" variant="outline">Avaliar</Button></Link>
+            </div>
+          ))}
       </div>
     </div>
   );
 }
 
-// ─── Courses ─────────────────────────────────────────────────────
-function CoordCourses() {
-  const { user } = useAuth();
-  const [data, setData] = useState<ApiCourse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<ApiCourse | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ name: "", description: "", hours: "" });
-
-  const load = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const list = await coursesApi.listByCoordinator(user.id);
-      setData(list);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar cursos");
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const openCreate = () => { setEditing(null); setFormData({ name: "", description: "", hours: "" }); setModalOpen(true); };
-  const openEdit = (c: ApiCourse) => { setEditing(c); setFormData({ name: c.name, description: c.description, hours: c.hours }); setModalOpen(true); };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    try {
-      if (editing) {
-        await coursesApi.update(editing.id, formData);
-        toast.success("Curso atualizado!");
-      } else {
-        await coursesApi.create({ ...formData, coordinatorId: user.id, coordinatorName: user.name });
-        toast.success("Curso criado!");
-      }
-      setModalOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao salvar curso");
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      await coursesApi.delete(deleteId);
-      toast.success("Curso excluído!");
-      setDeleteId(null);
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
-    }
-  };
-
-  const columns: Column<ApiCourse>[] = [
-    { key: "name", header: "Nome" },
-    { key: "description", header: "Descrição" },
-    { key: "hours", header: "Carga Horária" },
-    { key: "studentCount", header: "Alunos" },
-    { key: "actions", header: "Ações", render: (item: ApiCourse) => (
-      <div className="flex gap-1">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openEdit(item); }}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteId(item.id); }}><Trash2 className="h-4 w-4" /></Button>
-      </div>
-    )},
-  ];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display font-semibold text-lg">Meus Cursos</h2>
-        <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Novo Curso</Button>
-      </div>
-      {loading ? <TableSkeleton columns={5} /> : data.length === 0 ? <EmptyState title="Nenhum curso" description="Crie seu primeiro curso." /> : <DataTable columns={columns} data={data} />}
-      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Editar Curso" : "Novo Curso"}>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2"><Label>Nome</Label><Input placeholder="Nome do curso" required value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Descrição</Label><Textarea placeholder="Descrição" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Carga Horária</Label><Input placeholder="Ex: 120h" required value={formData.hours} onChange={e => setFormData(p => ({ ...p, hours: e.target.value }))} /></div>
-          <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button><Button type="submit">{editing ? "Salvar" : "Criar Curso"}</Button></div>
-        </form>
-      </ModalForm>
-      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir Curso" description="Tem certeza? Atividades vinculadas serão removidas." onConfirm={handleDelete} confirmLabel="Excluir" />
-    </div>
-  );
-}
-
-// ─── Students ────────────────────────────────────────────────────
-interface StudentRow { id: string; alunoId: string; cursoId: string; name: string; email: string; matricula: string; course: string }
+// ─── Students ─────────────────────────────────────────────────────
 function CoordStudents() {
   const { user } = useAuth();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [students, setStudents] = useState<StudentRow[]>([]);
+  const { cursoIds, loading: loadingCursos } = useMeusCursos(user?.id);
+  const [alunos, setAlunos] = useState<(UserCursoVinculo & { cursoNome: string })[]>([]);
   const [loading, setLoading] = useState(true);
-  const [courses, setCourses] = useState<ApiCourse[]>([]);
 
-  // Search results from backend (no more usersApi.list() which requires ADMIN)
-  const [searchResults, setSearchResults] = useState<ApiUser[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [selAlunoId, setSelAlunoId] = useState("");
-  const [selAlunoName, setSelAlunoName] = useState("");
-  const [selCurso, setSelCurso] = useState("");
-
-  // Filter for the students table
-  const [tableFilter, setTableFilter] = useState("");
-
-  const load = useCallback(async () => {
-    if (!user?.id) return;
-    setLoading(true);
-    try {
-      const courseList = await coursesApi.listByCoordinator(user.id);
-      setCourses(courseList);
-      const parts = await Promise.all(
-        courseList.map(async (c) => {
-          const alunos = await userCursoApi.listarAlunos(c.id);
-          return alunos.map((a) => ({
-            id: `${a.id}-${c.id}`,
-            alunoId: a.id,
-            cursoId: c.id,
-            name: a.nome,
-            email: a.email,
-            matricula: a.matricula || "—",
-            course: c.name,
-          }));
-        })
-      );
-      setStudents(parts.flat());
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar alunos");
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.id]);
-
-  useEffect(() => { load(); }, [load]);
-
-  // Debounced search using the new /usuarios/busca endpoint
   useEffect(() => {
-    if (searchTerm.length < 2 || selAlunoId) {
-      setSearchResults([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      setSearchLoading(true);
+    if (!cursoIds.length) { setLoading(false); return; }
+    (async () => {
       try {
-        const results = await usersApi.search(searchTerm, "ALUNO");
-        setSearchResults(results);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchTerm, selAlunoId]);
+        const por_curso = await Promise.all(
+          cursoIds.map(async (id) => {
+            const list = await userCursoApi.listarAlunos(id).catch(() => []);
+            // busca nome do curso
+            const cursoNome = list[0]?.nomeCurso ?? id;
+            return list.map((a) => ({ ...a, cursoNome }));
+          })
+        );
+        setAlunos(por_curso.flat());
+      } finally { setLoading(false); }
+    })();
+  }, [cursoIds]);
 
-  // Filter students table by name, email or matricula
-  const filteredTableStudents = tableFilter.trim()
-    ? students.filter((s) =>
-        s.name.toLowerCase().includes(tableFilter.toLowerCase()) ||
-        s.email.toLowerCase().includes(tableFilter.toLowerCase()) ||
-        s.matricula.toLowerCase().includes(tableFilter.toLowerCase())
-      )
-    : students;
-
-  const columns: Column<StudentRow>[] = [
-    { key: "name", header: "Nome" },
+  type Row = UserCursoVinculo & { cursoNome: string };
+  const columns: Column<Row>[] = [
+    { key: "nome", header: "Nome" },
     { key: "email", header: "Email" },
-    { key: "matricula", header: "Matrícula" },
-    { key: "course", header: "Curso" },
-    { key: "actions", header: "Ações", render: (item: StudentRow) => (
-      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Desvincular aluno"
-        onClick={() => handleDesvincular(item.alunoId, item.cursoId)}>
-        <Trash2 className="h-4 w-4" />
-      </Button>
-    )},
+    { key: "matricula", header: "Matrícula", render: (r) => <span>{r.matricula ?? "—"}</span> },
+    { key: "cursoNome", header: "Curso" },
   ];
 
-  const handleDesvincular = async (alunoId: string, cursoId: string) => {
-    try {
-      await userCursoApi.desvincular(cursoId, alunoId);
-      toast.success("Aluno desvinculado do curso!");
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao desvincular");
-    }
-  };
-
-  const vincular = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selAlunoId || !selCurso) return;
-    try {
-      await userCursoApi.vincular(selCurso, selAlunoId);
-      toast.success("Aluno vinculado ao curso!");
-      setModalOpen(false);
-      setSelAlunoId("");
-      setSelAlunoName("");
-      setSelCurso("");
-      setSearchTerm("");
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao vincular");
-    }
-  };
-
+  if (loading || loadingCursos) return <TableSkeleton columns={4} />;
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display font-semibold text-lg">Alunos vinculados</h2>
-        <Button onClick={() => setModalOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Vincular aluno</Button>
-      </div>
-
-      {/* Search/filter for the students table */}
-      {!loading && students.length > 0 && (
-        <div className="flex gap-2">
-          <Input
-            placeholder="Filtrar por nome, email ou matrícula..."
-            value={tableFilter}
-            onChange={(e) => setTableFilter(e.target.value)}
-            className="max-w-sm"
-          />
-        </div>
-      )}
-
-      {loading ? <TableSkeleton columns={5} /> : filteredTableStudents.length === 0 ? (
-        <EmptyState
-          title={tableFilter ? "Nenhum aluno encontrado" : "Nenhum aluno vinculado"}
-          description={tableFilter ? "Tente outro termo de busca." : "Vincule alunos aos seus cursos."}
-        />
-      ) : (
-        <DataTable columns={columns} data={filteredTableStudents} />
-      )}
-
-      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title="Vincular aluno ao curso">
-        <form onSubmit={vincular} className="space-y-4">
-          <div className="space-y-2">
-            <Label>Buscar Aluno por Nome ou Matrícula</Label>
-            <Input
-              placeholder="Digite o nome ou matrícula do aluno..."
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setSelAlunoId("");
-                setSelAlunoName("");
-              }}
-            />
-            {searchLoading && (
-              <p className="text-xs text-muted-foreground">Buscando...</p>
-            )}
-            {searchTerm.length >= 2 && searchResults.length > 0 && !selAlunoId && (
-              <div className="border rounded-md max-h-40 overflow-y-auto bg-white">
-                {searchResults.slice(0, 10).map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm border-b last:border-0"
-                    onClick={() => {
-                      setSelAlunoId(s.id);
-                      setSelAlunoName(s.name);
-                      setSearchTerm(s.name);
-                    }}
-                  >
-                    <span className="font-medium">{s.name}</span>
-                    {s.matricula && s.matricula !== "-" && (
-                      <span className="text-muted-foreground ml-2 text-xs">Mat: {s.matricula}</span>
-                    )}
-                    <span className="text-muted-foreground ml-2 text-xs">({s.email})</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {searchTerm.length >= 2 && searchResults.length === 0 && !selAlunoId && !searchLoading && (
-              <p className="text-xs text-muted-foreground">Nenhum aluno encontrado.</p>
-            )}
-            {selAlunoId && (
-              <p className="text-xs text-green-600 font-medium">
-                ✓ Aluno selecionado: {selAlunoName}
-              </p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label>Curso</Label>
-            <Select value={selCurso} onValueChange={setSelCurso}>
-              <SelectTrigger><SelectValue placeholder="Selecione o curso" /></SelectTrigger>
-              <SelectContent>
-                {courses.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => { setModalOpen(false); setSearchTerm(""); setSelAlunoId(""); setSelAlunoName(""); }}>Cancelar</Button>
-            <Button type="submit" disabled={!selAlunoId || !selCurso}>Vincular</Button>
-          </div>
-        </form>
-      </ModalForm>
+      <h2 className="font-display font-semibold text-lg">Alunos dos Meus Cursos</h2>
+      {alunos.length === 0
+        ? <EmptyState title="Nenhum aluno vinculado" description="Peça ao administrador para vincular alunos ao seu curso." />
+        : <DataTable columns={columns} data={alunos} />}
     </div>
   );
 }
 
-const coordStatusPt: Record<string, string> = {
-  PENDENTE: "Pendente",
-  APROVADO: "Aprovado",
-  REPROVADO: "Reprovado",
-};
-
-// ─── Activities ──────────────────────────────────────────────────
+// ─── Activities (visualização) ────────────────────────────────────
 function CoordActivities() {
-  const [data, setData] = useState<ApiActivity[]>([]);
+  const { user } = useAuth();
+  const { cursoIds, loading: loadingCursos } = useMeusCursos(user?.id);
+  const [acts, setActs] = useState<ApiActivity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<ApiActivity | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [coursesList, setCoursesList] = useState<ApiCourse[]>([]);
-  const [tipos, setTipos] = useState<{ id: string; nome: string }[]>([]);
-  const [categorias, setCategorias] = useState<{ id: string; nome: string }[]>([]);
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    courseId: "",
-    tipoAtividadeId: "",
-    categoriaId: "",
-    points: "",
-    horas: "",
-  });
+  const [filter, setFilter] = useState<"TODOS" | "PENDENTE" | "APROVADO" | "REPROVADO">("TODOS");
 
   const load = useCallback(async () => {
+    if (!cursoIds.length) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [acts, courses, t, cats] = await Promise.all([
-        activitiesApi.list(),
-        coursesApi.list(),
-        tiposAtividadeApi.list(),
-        categoriaAtividadeApi.list(),
-      ]);
-      setData(acts);
-      setCoursesList(courses);
-      setTipos(t.map((x) => ({ id: x.id, nome: x.nome })));
-      setCategorias(cats.map((x) => ({ id: x.id, nome: x.nome })));
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      const all = await Promise.all(cursoIds.map((id) => activitiesApi.listByCourse(id).catch(() => [] as ApiActivity[])));
+      setActs(all.flat());
+    } finally { setLoading(false); }
+  }, [cursoIds]);
 
   useEffect(() => { load(); }, [load]);
 
-  const openCreate = () => {
-    setEditing(null);
-    setFormData({ title: "", description: "", courseId: "", tipoAtividadeId: "", categoriaId: "", points: "", horas: "" });
-    setModalOpen(true);
-  };
+  const filtered = filter === "TODOS" ? acts : acts.filter((a) => a.status === filter);
+  const columns: Column<ApiActivity>[] = [
+    { key: "nomeAluno", header: "Aluno" },
+    { key: "titulo", header: "Atividade" },
+    { key: "categoriaFixa", header: "Categoria" },
+    { key: "horasSolicitadas", header: "Horas solicitadas" },
+    { key: "horasAprovadas", header: "Horas aprovadas", render: (a) => <span>{a.horasAprovadas ?? "—"}</span> },
+    { key: "status", header: "Status", render: (a) => <StatusBadge status={a.status === "APROVADO" ? "approved" : a.status === "REPROVADO" ? "rejected" : "pending"} /> },
+    { key: "dataSubmissao", header: "Data" },
+  ];
 
-  const openEdit = (a: ApiActivity) => {
-    setEditing(a);
-    setFormData({
-      title: a.title,
-      description: a.description,
-      courseId: a.courseId,
-      tipoAtividadeId: a.idTipoAtividade ?? "",
-      categoriaId: "",
-      points: String(a.points),
-      horas: a.horasSolicitadas != null ? String(a.horasSolicitadas) : "",
-    });
-    setModalOpen(true);
-  };
+  if (loading || loadingCursos) return <TableSkeleton columns={6} />;
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <h2 className="font-display font-semibold text-lg">Atividades dos Meus Cursos</h2>
+        <div className="flex gap-2 flex-wrap">
+          {(["TODOS","PENDENTE","APROVADO","REPROVADO"] as const).map((s) => (
+            <button key={s} onClick={() => setFilter(s)}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${filter === s ? "bg-senac-blue text-white border-senac-blue" : "hover:bg-muted"}`}>
+              {s === "TODOS" ? "Todos" : s === "PENDENTE" ? "Pendentes" : s === "APROVADO" ? "Aprovadas" : "Reprovadas"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {filtered.length === 0
+        ? <EmptyState title="Nenhuma atividade" />
+        : <DataTable columns={columns} data={filtered} />}
+    </div>
+  );
+}
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const pts = Number(formData.points);
-    const horas = formData.horas.trim() ? Number(formData.horas) : undefined;
-    const payload = {
-      title: formData.title,
-      description: formData.description,
-      courseId: formData.courseId,
-      tipoAtividadeId: formData.tipoAtividadeId,
-      points: pts,
-      horasSolicitadas: horas,
-    };
+// ─── Proofs (Avaliar) ─────────────────────────────────────────────
+function CoordProofs() {
+  const { user } = useAuth();
+  const { cursoIds, loading: loadingCursos } = useMeusCursos(user?.id);
+  const [pendentes, setPendentes] = useState<ApiActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<ApiActivity | null>(null);
+  const [tipos, setTipos] = useState<TipoAtividade[]>([]);
+  const [form, setForm] = useState({
+    horasAprovadas: "",
+    categoriaFixa: "" as CategoriaFixa | "",
+    idTipoAtividade: "",
+    motivoReprovacao: "",
+    showReject: false,
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!cursoIds.length) { setLoading(false); return; }
+    setLoading(true);
     try {
-      if (editing) await activitiesApi.update(editing.id, payload);
-      else await activitiesApi.create(payload);
-      toast.success(editing ? "Atividade atualizada!" : "Atividade criada!");
-      setModalOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
-    }
+      const [pend, tipos_] = await Promise.all([
+        Promise.all(cursoIds.map((id) => activitiesApi.listPendingByCourse(id).catch(() => [] as ApiActivity[]))),
+        tiposAtividadeApi.list(),
+      ]);
+      setPendentes(pend.flat());
+      setTipos(tipos_);
+    } finally { setLoading(false); }
+  }, [cursoIds]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openReview = (a: ApiActivity) => {
+    setSelected(a);
+    setForm({ horasAprovadas: String(a.horasSolicitadas), categoriaFixa: a.categoriaFixa, idTipoAtividade: a.idTipoAtividade, motivoReprovacao: "", showReject: false });
   };
 
-  const handleDelete = async () => {
-    if (!deleteId) return;
+  const handleAprovar = async () => {
+    if (!selected) return;
+    setSubmitting(true);
     try {
-      await activitiesApi.delete(deleteId);
-      toast.success("Atividade excluída!");
-      setDeleteId(null);
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
-    }
+      await activitiesApi.avaliar({
+        atividadeId: selected.id,
+        status: "APROVADO",
+        horasAprovadas: form.horasAprovadas ? Number(form.horasAprovadas) : undefined,
+        categoriaFixa: form.categoriaFixa || undefined,
+        idTipoAtividade: form.idTipoAtividade || undefined,
+      });
+      toast.success("Atividade aprovada! O aluno foi notificado por email.");
+      setSelected(null); load();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao aprovar"); }
+    finally { setSubmitting(false); }
+  };
+
+  const handleReprovar = async () => {
+    if (!selected) return;
+    if (!form.motivoReprovacao.trim()) { toast.error("Informe o motivo da reprovação"); return; }
+    setSubmitting(true);
+    try {
+      await activitiesApi.avaliar({
+        atividadeId: selected.id,
+        status: "REPROVADO",
+        motivoReprovacao: form.motivoReprovacao.trim(),
+        categoriaFixa: form.categoriaFixa || undefined,
+        idTipoAtividade: form.idTipoAtividade || undefined,
+      });
+      toast.success("Atividade reprovada. O aluno foi notificado por email.");
+      setSelected(null); load();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao reprovar"); }
+    finally { setSubmitting(false); }
   };
 
   const columns: Column<ApiActivity>[] = [
-    { key: "title", header: "Nome" },
-    { key: "nomeAluno", header: "Aluno", render: (item) => <span>{item.nomeAluno || "—"}</span> },
-    { key: "courseName", header: "Curso" },
-    { key: "category", header: "Tipo" },
-    { key: "points", header: "Pontos" },
-    {
-      key: "backendStatus",
-      header: "Status",
-      render: (item) => <span>{coordStatusPt[item.backendStatus ?? ""] ?? item.backendStatus ?? "—"}</span>,
-    },
-    { key: "actions", header: "Ações", render: (item) => (
-      <div className="flex gap-1">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(item)}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteId(item.id)}><Trash2 className="h-4 w-4" /></Button>
-      </div>
+    { key: "nomeAluno", header: "Aluno" },
+    { key: "titulo", header: "Atividade" },
+    { key: "categoriaFixa", header: "Categoria" },
+    { key: "horasSolicitadas", header: "Horas", render: (a) => <span>{a.horasSolicitadas}h</span> },
+    { key: "dataSubmissao", header: "Enviado em" },
+    { key: "actions", header: "Ações", render: (a) => (
+      <Button variant="ghost" size="icon" onClick={() => openReview(a)}><Eye className="h-4 w-4" /></Button>
     )},
   ];
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display font-semibold text-lg">Atividades</h2>
-        <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" /> Nova atividade</Button>
-      </div>
-      {loading ? <TableSkeleton columns={7} /> : data.length === 0 ? <EmptyState title="Nenhuma atividade" /> : <DataTable columns={columns} data={data} />}
-      <ModalForm open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Editar atividade" : "Nova atividade"}>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2"><Label>Título</Label><Input required value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Descrição</Label><Textarea value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} /></div>
-          <p className="text-xs text-muted-foreground bg-muted rounded p-2">
-            ℹ️ O aluno seleciona esta atividade ao enviar o comprovante.
-          </p>
-          <div className="space-y-2">
-            <Label>Curso</Label>
-            <Select value={formData.courseId} onValueChange={v => setFormData(p => ({ ...p, courseId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-              <SelectContent>{coursesList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Tipo de atividade</Label>
-            <Select value={formData.tipoAtividadeId} onValueChange={v => setFormData(p => ({ ...p, tipoAtividadeId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-              <SelectContent>{tipos.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Categoria</Label>
-            <Select value={formData.categoriaId} onValueChange={(v) => setFormData(p => ({ ...p, categoriaId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Selecione a categoria (opcional)" /></SelectTrigger>
-              <SelectContent>{categorias.map((cat) => <SelectItem key={cat.id} value={cat.id}>{cat.nome}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2"><Label>Horas (opcional)</Label><Input type="number" min={0} value={formData.horas} onChange={e => setFormData(p => ({ ...p, horas: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Pontos</Label><Input type="number" required value={formData.points} onChange={e => setFormData(p => ({ ...p, points: e.target.value }))} /></div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button type="submit">{editing ? "Salvar" : "Criar"}</Button>
-          </div>
-        </form>
-      </ModalForm>
-      <ConfirmDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)} title="Excluir atividade" description="Tem certeza?" onConfirm={handleDelete} confirmLabel="Excluir" />
-    </div>
-  );
-}
-
-// ─── Proofs ──────────────────────────────────────────────────────
-function CoordProofs() {
-  const [data, setData] = useState<ApiProof[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedProof, setSelectedProof] = useState<ApiProof | null>(null);
-  // FIX: Add feedback state for rejection
-  const [rejectFeedback, setRejectFeedback] = useState("");
-  const [showRejectForm, setShowRejectForm] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setData(await proofsApi.list());
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar comprovações");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleApprove = async () => {
-    if (!selectedProof) return;
-    try {
-      await proofsApi.approve(selectedProof.id);
-      toast.success("Comprovante aprovado!");
-      setSelectedProof(null);
-      setShowRejectForm(false);
-      setRejectFeedback("");
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao aprovar");
-    }
-  };
-
-  const handleReject = async () => {
-    if (!selectedProof) return;
-    // FIX: Require feedback before rejecting
-    if (!rejectFeedback.trim()) {
-      toast.error("Por favor, informe o motivo da rejeição para que o aluno saiba o que corrigir.");
-      return;
-    }
-    try {
-      await proofsApi.reject(selectedProof.id, rejectFeedback.trim());
-      toast.success("Comprovante rejeitado com feedback enviado ao aluno.");
-      setSelectedProof(null);
-      setShowRejectForm(false);
-      setRejectFeedback("");
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao rejeitar");
-    }
-  };
-
-  const columns: Column<ApiProof>[] = [
-    { key: "studentName", header: "Aluno" }, { key: "activityTitle", header: "Atividade" }, { key: "date", header: "Data Envio" },
-    { key: "status", header: "Status", render: (item) => <StatusBadge status={item.status} /> },
-    { key: "actions", header: "Ações", render: (item) => <Button variant="ghost" size="icon" onClick={() => { setSelectedProof(item); setShowRejectForm(false); setRejectFeedback(""); }}><Eye className="h-4 w-4" /></Button> },
-  ];
+  if (loading || loadingCursos) return <TableSkeleton columns={5} />;
 
   return (
     <div className="space-y-4">
-      <h2 className="font-display font-semibold text-lg">Comprovações</h2>
-      {loading ? <TableSkeleton columns={5} /> : data.length === 0 ? <EmptyState title="Nenhuma comprovação" /> : <DataTable columns={columns} data={data} />}
-      <ModalForm open={!!selectedProof} onOpenChange={() => { setSelectedProof(null); setShowRejectForm(false); setRejectFeedback(""); }} title="Avaliar Comprovante">
-        {selectedProof && (
+      <h2 className="font-display font-semibold text-lg">Atividades Pendentes de Avaliação</h2>
+      {pendentes.length === 0
+        ? <EmptyState title="Nenhuma atividade pendente" description="Quando um aluno enviar uma atividade, ela aparecerá aqui." />
+        : <DataTable columns={columns} data={pendentes} />}
+
+      <ModalForm open={!!selected} onOpenChange={() => setSelected(null)} title="Avaliar Atividade">
+        {selected && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><p className="text-muted-foreground">Aluno</p><p className="font-medium">{selectedProof.studentName}</p></div>
-              <div><p className="text-muted-foreground">Atividade</p><p className="font-medium">{selectedProof.activityTitle}</p></div>
-              <div><p className="text-muted-foreground">Data</p><p className="font-medium">{selectedProof.date}</p></div>
-              <div><p className="text-muted-foreground">Status</p><StatusBadge status={selectedProof.status} /></div>
+            {/* Info da atividade */}
+            <div className="grid grid-cols-2 gap-3 text-sm bg-muted/30 rounded-md p-3">
+              <div><p className="text-muted-foreground">Aluno</p><p className="font-medium">{selected.nomeAluno}</p></div>
+              <div><p className="text-muted-foreground">Curso</p><p className="font-medium">{selected.nomeCurso}</p></div>
+              <div><p className="text-muted-foreground">Horas solicitadas</p><p className="font-medium">{selected.horasSolicitadas}h</p></div>
+              <div><p className="text-muted-foreground">Categoria</p><p className="font-medium">{selected.categoriaFixa}</p></div>
+              <div><p className="text-muted-foreground">Tipo</p><p className="font-medium">{selected.tipoAtividade}</p></div>
             </div>
-            {selectedProof.observacao && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 text-sm">
-                <p className="text-muted-foreground font-medium mb-1">Feedback anterior:</p>
-                <p>{selectedProof.observacao}</p>
+            {selected.descricao && <p className="text-sm text-muted-foreground bg-muted/30 rounded p-2">{selected.descricao}</p>}
+            {selected.comprovanteUrl && (
+              <a href={selected.comprovanteUrl} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-senac-blue underline">
+                👁 Ver comprovante enviado
+              </a>
+            )}
+
+            {/* Campos editáveis pelo coordenador */}
+            <div className="space-y-3 border-t pt-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ajustes opcionais</p>
+              <div className="space-y-1">
+                <Label>Horas a aprovar</Label>
+                <Input type="number" min="1" value={form.horasAprovadas} onChange={(e) => setForm(p => ({ ...p, horasAprovadas: e.target.value }))} />
+                <p className="text-xs text-muted-foreground">Deixe em branco para usar as horas solicitadas ({selected.horasSolicitadas}h)</p>
+              </div>
+              <div className="space-y-1">
+                <Label>Corrigir categoria</Label>
+                <Select value={form.categoriaFixa} onValueChange={(v) => setForm(p => ({ ...p, categoriaFixa: v as CategoriaFixa }))}>
+                  <SelectTrigger><SelectValue placeholder="Manter original" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ENSINO">Ensino</SelectItem>
+                    <SelectItem value="PESQUISA">Pesquisa</SelectItem>
+                    <SelectItem value="EXTENSAO">Extensão</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Corrigir tipo de atividade</Label>
+                <Select value={form.idTipoAtividade} onValueChange={(v) => setForm(p => ({ ...p, idTipoAtividade: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Manter original" /></SelectTrigger>
+                  <SelectContent>{tipos.map((t) => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Motivo de reprovação */}
+            {form.showReject && (
+              <div className="space-y-1 border border-red-200 bg-red-50 rounded-md p-3">
+                <Label className="text-destructive font-medium">Motivo da reprovação *</Label>
+                <Textarea placeholder="Explique ao aluno o que precisa corrigir para que ele possa reenviar..." value={form.motivoReprovacao} onChange={(e) => setForm(p => ({ ...p, motivoReprovacao: e.target.value }))} className="min-h-[80px]" />
               </div>
             )}
-            <div className="bg-muted rounded-md p-8 text-center text-sm text-muted-foreground">[Visualização do documento]</div>
-            {selectedProof.status === "pending" && (
-              <div className="space-y-3">
-                {/* FIX: Show reject form with feedback textarea */}
-                {showRejectForm ? (
-                  <div className="space-y-3 border rounded-md p-4 bg-red-50">
-                    <Label className="text-destructive font-medium">Motivo da rejeição (obrigatório)</Label>
-                    <Textarea
-                      placeholder="Explique ao aluno o motivo da rejeição para que ele possa corrigir e reenviar..."
-                      value={rejectFeedback}
-                      onChange={(e) => setRejectFeedback(e.target.value)}
-                      className="min-h-[80px]"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => { setShowRejectForm(false); setRejectFeedback(""); }}>Cancelar</Button>
-                      <Button variant="destructive" size="sm" onClick={handleReject} disabled={!rejectFeedback.trim()}>
-                        <X className="h-4 w-4 mr-1" /> Confirmar Rejeição
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" className="text-destructive" onClick={() => setShowRejectForm(true)}>
-                      <X className="h-4 w-4 mr-1" /> Rejeitar
+
+            <div className="flex justify-between gap-2 pt-2">
+              {!form.showReject
+                ? <Button variant="outline" className="text-destructive gap-1" onClick={() => setForm(p => ({ ...p, showReject: true }))}><X className="h-4 w-4" /> Reprovar</Button>
+                : <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setForm(p => ({ ...p, showReject: false, motivoReprovacao: "" }))}>Cancelar</Button>
+                    <Button variant="destructive" size="sm" onClick={handleReprovar} disabled={submitting || !form.motivoReprovacao.trim()}>
+                      <X className="h-4 w-4 mr-1" /> Confirmar Reprovação
                     </Button>
-                    <Button onClick={handleApprove}>
-                      <Check className="h-4 w-4 mr-1" /> Aprovar
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
+                  </div>}
+              {!form.showReject && (
+                <Button className="gap-1 bg-green-600 hover:bg-green-700 text-white" onClick={handleAprovar} disabled={submitting}>
+                  <Check className="h-4 w-4" /> {submitting ? "Aprovando..." : "Aprovar"}
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </ModalForm>
@@ -716,118 +383,47 @@ function CoordProofs() {
   );
 }
 
-// ─── Certificates ────────────────────────────────────────────────
-
-function CoordCertificates() {
+// ─── Notifications ────────────────────────────────────────────────
+function CoordNotifications() {
   const { user } = useAuth();
-  const [certs, setCerts] = useState<ApiCertificate[]>([]);
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user?.id) { setLoading(false); return; }
-    coursesApi.list()
-      .then((courses) =>
-        Promise.all(courses.map((c) => userCursoApi.listarAlunos(c.id)))
-      )
-      .then((porCurso) => {
-        const alunos = porCurso.flat();
-        const ids = [...new Set(alunos.map((a) => a.id))];
-        return Promise.all(ids.map((id) => certificadosApi.listByAluno(id).catch((): ApiCertificate[] => [])));
-      })
-      .then((todos) => setCerts(todos.flat()))
-      .catch(() => toast.error("Erro ao carregar certificados"))
-      .finally(() => setLoading(false));
-  }, [user?.id]);
-
-  const columns: Column<ApiCertificate>[] = [
-    { key: "studentName", header: "Aluno" },
-    { key: "activityTitle", header: "Atividade" },
-    { key: "date", header: "Data de emissão" },
-    {
-      key: "downloadUrl",
-      header: "Arquivo",
-      render: (item: ApiCertificate) => (
-        <a href={item.downloadUrl} target="_blank" rel="noopener noreferrer">
-          <Button variant="outline" size="sm" className="gap-1">
-            <Download className="h-3 w-3" /> Baixar
-          </Button>
-        </a>
-      ),
-    },
-  ];
-
-  if (loading) return <TableSkeleton columns={4} />;
-
-  return (
-    <div className="space-y-4">
-      <h2 className="font-display font-semibold text-lg">Certificados emitidos</h2>
-      {certs.length === 0 ? (
-        <EmptyState title="Nenhum certificado" description="Certificados aparecem após aprovação de comprovantes." />
-      ) : (
-        <DataTable columns={columns} data={certs} />
-      )}
-    </div>
-  );
-}
-
-// ─── Notifications ───────────────────────────────────────────────
-function CoordNotifications() {
-  const { user } = useAuth();
-  const [notifications, setNotifications] = useState<ApiNotification[]>([])
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
-    notificacoesApi
-      .list(user.id)
-      .then((list) =>
-        setNotifications(list)
-      )
-      .catch(() => toast.error("Erro ao carregar notificações"))
+    notificacoesApi.list(user.id)
+      .then(setNotifications).catch(() => toast.error("Erro ao carregar notificações"))
       .finally(() => setLoading(false));
   }, [user?.id]);
 
   const markAsRead = async (id: number) => {
     try {
       await notificacoesApi.marcarLida(id);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-      toast.success("Notificação lida");
-    } catch {
-      toast.error("Não foi possível atualizar");
-    }
+      setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    } catch { toast.error("Não foi possível atualizar"); }
   };
 
-  if (loading) return <TableSkeleton columns={1} />;
-
+  if (loading) return <CardSkeleton count={2} />;
   return (
     <div className="space-y-4">
       <h2 className="font-display font-semibold text-lg">Notificações</h2>
-      {notifications.length === 0 ? (
-        <EmptyState title="Nenhuma notificação" />
-      ) : (
-        <div className="bg-card border rounded-md divide-y">
-          {notifications.map((n) => (
-            <div key={n.id} className={`flex items-center justify-between p-4 ${!n.read ? "bg-primary/5" : ""}`}>
-              <div className="flex items-center gap-3">
-                {!n.read && <div className="w-2 h-2 rounded-full bg-accent" />}
-                <div>
-                  <p className="text-sm font-medium">{n.titulo}</p>
-                  <p className="text-xs text-muted-foreground">{n.mensagem}</p>
+      {notifications.length === 0
+        ? <EmptyState title="Sem notificações" description="Você está em dia!" />
+        : <div className="bg-card border rounded-md divide-y">
+            {notifications.map((n) => (
+              <div key={n.id} className={`flex items-center justify-between p-4 ${!n.read ? "bg-primary/5" : ""}`}>
+                <div className="flex items-center gap-3">
+                  {!n.read && <div className="w-2 h-2 rounded-full bg-accent shrink-0" />}
+                  <div>
+                    <p className="text-sm font-medium">{n.titulo}</p>
+                    <p className="text-xs text-muted-foreground">{n.mensagem}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{n.time}</p>
+                  </div>
                 </div>
+                {!n.read && <Button variant="ghost" size="sm" className="text-xs shrink-0" onClick={() => markAsRead(n.id)}>Marcar lida</Button>}
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{n.time}</span>
-                {!n.read && (
-                  <Button variant="ghost" size="sm" onClick={() => markAsRead(n.id)}>Marcar como lida</Button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>}
     </div>
   );
 }
@@ -844,36 +440,19 @@ function CoordProfile() {
   const [submittingPw, setSubmittingPw] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateProfile({ name });
-    toast.success("Perfil atualizado!");
-    setEditing(false);
+    e.preventDefault(); updateProfile({ name }); toast.success("Perfil atualizado!"); setEditing(false);
   };
-
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (novaSenha !== confirmacao) {
-      toast.error("A nova senha e a confirmação não coincidem.");
-      return;
-    }
-    if (novaSenha.length < 8) {
-      toast.error("A nova senha deve ter no mínimo 8 caracteres.");
-      return;
-    }
+    if (novaSenha !== confirmacao) { toast.error("As senhas não coincidem"); return; }
+    if (novaSenha.length < 8) { toast.error("Mínimo 8 caracteres"); return; }
     setSubmittingPw(true);
     try {
       const { authApi } = await import("@/services/api");
       await authApi.changePassword(senhaAtual, novaSenha, confirmacao);
-      toast.success("Senha alterada com sucesso!");
-      setChangingPassword(false);
-      setSenhaAtual("");
-      setNovaSenha("");
-      setConfirmacao("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao alterar senha");
-    } finally {
-      setSubmittingPw(false);
-    }
+      toast.success("Senha alterada!"); setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao("");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Erro"); }
+    finally { setSubmittingPw(false); }
   };
 
   return (
@@ -882,40 +461,32 @@ function CoordProfile() {
       <div className="bg-card border rounded-md p-5 space-y-4">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-senac-blue flex items-center justify-center text-white text-xl font-bold">{user?.name?.charAt(0)}</div>
-          <div><p className="font-display font-semibold">{user?.name}</p><p className="text-sm text-muted-foreground">{user?.email}</p><p className="text-xs text-muted-foreground">Coordenador</p></div>
+          <div>
+            <p className="font-display font-semibold">{user?.name}</p>
+            <p className="text-sm text-muted-foreground">{user?.email}</p>
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Coordenador</span>
+          </div>
         </div>
         {editing ? (
-          <form onSubmit={handleSave} className="space-y-4 pt-4 border-t">
-            <div className="space-y-2"><Label>Nome</Label><Input value={name} onChange={e => setName(e.target.value)} required /></div>
+          <form onSubmit={handleSave} className="space-y-3 pt-4 border-t">
+            <div className="space-y-1"><Label>Nome</Label><Input value={name} onChange={e => setName(e.target.value)} required /></div>
             <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancelar</Button><Button type="submit">Salvar</Button></div>
           </form>
         ) : (
-          <div className="space-y-3">
-            <Button variant="outline" onClick={() => setEditing(true)} className="w-full">Editar Perfil</Button>
+          <div className="space-y-2 pt-4 border-t">
+            <Button variant="outline" onClick={() => setEditing(true)} className="w-full"><Pencil className="h-4 w-4 mr-2" /> Editar Perfil</Button>
             <Button variant="outline" onClick={() => setChangingPassword(true)} className="w-full">Alterar Senha</Button>
           </div>
         )}
-
         {changingPassword && (
-          <form onSubmit={handleChangePassword} className="space-y-4 pt-4 border-t">
-            <h3 className="font-display font-semibold text-base">Alterar Senha</h3>
-            <div className="space-y-2">
-              <Label>Senha Atual</Label>
-              <Input type="password" placeholder="••••••••" required value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Nova Senha</Label>
-              <Input type="password" placeholder="Mínimo 8 caracteres" required value={novaSenha} onChange={e => setNovaSenha(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Confirmar Nova Senha</Label>
-              <Input type="password" placeholder="••••••••" required value={confirmacao} onChange={e => setConfirmacao(e.target.value)} />
-            </div>
+          <form onSubmit={handleChangePassword} className="space-y-3 pt-4 border-t">
+            <h3 className="font-semibold">Alterar Senha</h3>
+            <div className="space-y-1"><Label>Senha Atual</Label><Input type="password" required value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} /></div>
+            <div className="space-y-1"><Label>Nova Senha</Label><Input type="password" placeholder="Mínimo 8 caracteres" required value={novaSenha} onChange={e => setNovaSenha(e.target.value)} /></div>
+            <div className="space-y-1"><Label>Confirmar</Label><Input type="password" required value={confirmacao} onChange={e => setConfirmacao(e.target.value)} /></div>
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={() => { setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao(""); }}>Cancelar</Button>
-              <Button type="submit" disabled={submittingPw}>
-                {submittingPw ? "Salvando..." : "Alterar Senha"}
-              </Button>
+              <Button type="submit" disabled={submittingPw}>{submittingPw ? "Salvando..." : "Alterar"}</Button>
             </div>
           </form>
         )}
@@ -924,25 +495,26 @@ function CoordProfile() {
   );
 }
 
-const titleMap: Record<string, string> = {
-  "/coordinator": "Dashboard", "/coordinator/courses": "Cursos", "/coordinator/students": "Alunos", "/coordinator/activities": "Atividades",
-  "/coordinator/proofs": "Comprovações", "/coordinator/certificates": "Certificados", "/coordinator/notifications": "Notificações", "/coordinator/profile": "Perfil",
-};
-
+// ─── Router ───────────────────────────────────────────────────────
 export default function CoordinatorDashboardPage() {
   const location = useLocation();
-  const title = titleMap[location.pathname] || "Dashboard";
+  const title: Record<string, string> = {
+    "/coordinator": "Dashboard",
+    "/coordinator/students": "Alunos",
+    "/coordinator/activities": "Atividades",
+    "/coordinator/proofs": "Avaliar Atividades",
+    "/coordinator/notifications": "Notificações",
+    "/coordinator/profile": "Perfil",
+  };
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardLayout navItems={navItems} title={title}>
+      <DashboardLayout navItems={navItems} title={title[location.pathname] || "Dashboard"}>
         <div className="pb-24 lg:pb-8 px-4">
           <Routes>
             <Route index element={<CoordDashboard />} />
-            <Route path="courses" element={<CoordCourses />} />
             <Route path="students" element={<CoordStudents />} />
             <Route path="activities" element={<CoordActivities />} />
             <Route path="proofs" element={<CoordProofs />} />
-            <Route path="certificates" element={<CoordCertificates />} />
             <Route path="notifications" element={<CoordNotifications />} />
             <Route path="profile" element={<CoordProfile />} />
           </Routes>
