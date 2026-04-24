@@ -437,7 +437,7 @@ function CoordProfile() {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault(); updateProfile({ name }); toast.success("Perfil atualizado!"); setEditing(false);
   };
-  const handleChangePassword = async (e: React.FormEvent) => {
+  async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
     if (novaSenha !== confirmacao) { toast.error("As senhas não coincidem"); return; }
     if (novaSenha.length < 8) { toast.error("Mínimo 8 caracteres"); return; }
@@ -448,7 +448,7 @@ function CoordProfile() {
       toast.success("Senha alterada!"); setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao("");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Erro"); }
     finally { setSubmittingPw(false); }
-  };
+  }
 
   return (
     <div className="max-w-lg mx-auto">
