@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   LayoutDashboard, BookOpen, ClipboardList, Upload, Trophy, Award,
-  Bell, User, Download, AlertCircle, RefreshCw, Clock, CheckCircle,
+  Bell, User, Download, AlertCircle, RefreshCw, Clock, CheckCircle, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Routes, Route } from "react-router-dom";
 import { toast } from "sonner";
@@ -30,6 +30,54 @@ import {
   type CategoriaFixa,
   type ApiHorasAluno,
 } from "@/services/api";
+
+// ─── Comprovante Viewer ───────────────────────────────────────────
+function ComprovanteViewer({ url }: { url: string }) {
+  const [open, setOpen] = useState(false);
+  const isPdf = url.toLowerCase().includes(".pdf") || url.includes("fl_attachment");
+  const isImage = /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="text-xs text-senac-blue underline flex items-center gap-1 w-fit"
+      >
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        {open ? "Ocultar comprovante" : "Ver comprovante"}
+      </button>
+
+      {open && (
+        <div className="rounded-md border overflow-hidden bg-muted/20 mt-1">
+          {isPdf && (
+            <iframe
+              src={`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`}
+              className="w-full"
+              style={{ height: "420px" }}
+              title="Comprovante"
+            />
+          )}
+          {isImage && (
+            <img
+              src={url}
+              alt="Comprovante"
+              className="w-full object-contain max-h-[420px]"
+            />
+          )}
+          {!isPdf && !isImage && (
+            <div className="p-3 text-xs text-muted-foreground text-center">
+              Não foi possível pré-visualizar.{" "}
+              <a href={url} target="_blank" rel="noopener noreferrer" className="text-senac-blue underline">
+                Abrir em nova aba
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────
 function statusUI(s: string): "pending" | "approved" | "rejected" {
@@ -252,9 +300,7 @@ function StudentActivities() {
               </div>
             )}
             {a.comprovanteUrl && (
-              <a href={a.comprovanteUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-senac-blue underline flex items-center gap-1 w-fit">
-                <Download className="h-3 w-3" /> Ver comprovante
-              </a>
+              <ComprovanteViewer url={a.comprovanteUrl} />
             )}
             {a.status === "REPROVADO" && (
               reenviarId === a.id

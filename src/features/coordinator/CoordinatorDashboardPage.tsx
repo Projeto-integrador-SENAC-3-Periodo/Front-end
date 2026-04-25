@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  LayoutDashboard, Users, ClipboardList, FileCheck, Bell, Check, X, Eye, User, Pencil, Clock, AlertCircle, CheckCircle,
+  LayoutDashboard, Users, ClipboardList, FileCheck, Bell, Check, X, Eye, User, Pencil, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Routes, Route, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -38,6 +38,54 @@ const bottomNavItems = [
   { label: "Notificações", path: "/coordinator/notifications", icon: Bell },
   { label: "Perfil",       path: "/coordinator/profile",       icon: User },
 ];
+
+// ─── Comprovante Viewer ───────────────────────────────────────────
+function ComprovanteViewer({ url }: { url: string }) {
+  const [open, setOpen] = useState(false);
+  const isPdf = url.toLowerCase().includes(".pdf") || url.includes("fl_attachment");
+  const isImage = /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-2 text-sm text-senac-blue underline"
+      >
+        {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        {open ? "Ocultar comprovante" : "👁 Ver comprovante enviado"}
+      </button>
+
+      {open && (
+        <div className="rounded-md border overflow-hidden bg-muted/20">
+          {isPdf && (
+            <iframe
+              src={`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`}
+              className="w-full"
+              style={{ height: "480px" }}
+              title="Comprovante"
+            />
+          )}
+          {isImage && (
+            <img
+              src={url}
+              alt="Comprovante"
+              className="w-full object-contain max-h-[480px]"
+            />
+          )}
+          {!isPdf && !isImage && (
+            <div className="p-4 text-sm text-muted-foreground text-center">
+              Não foi possível pré-visualizar.{" "}
+              <a href={url} target="_blank" rel="noopener noreferrer" className="text-senac-blue underline">
+                Abrir em nova aba
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function BottomNav() {
   const location = useLocation();
@@ -134,7 +182,6 @@ function CoordStudents() {
         const por_curso = await Promise.all(
           cursoIds.map(async (id) => {
             const list = await userCursoApi.listarAlunos(id).catch(() => []);
-            // busca nome do curso
             const cursoNome = list[0]?.nomeCurso ?? id;
             return list.map((a) => ({ ...a, cursoNome }));
           })
@@ -318,12 +365,9 @@ function CoordProofs() {
               <div><p className="text-muted-foreground">Tipo</p><p className="font-medium">{selected.tipoAtividade}</p></div>
             </div>
             {selected.descricao && <p className="text-sm text-muted-foreground bg-muted/30 rounded p-2">{selected.descricao}</p>}
-            {selected.comprovanteUrl && (
-              <a href={selected.comprovanteUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-sm text-senac-blue underline">
-                👁 Ver comprovante enviado
-              </a>
-            )}
+
+            {/* Visualizador de comprovante */}
+            {selected.comprovanteUrl && <ComprovanteViewer url={selected.comprovanteUrl} />}
 
             {/* Campos editáveis pelo coordenador */}
             <div className="space-y-3 border-t pt-3">
@@ -428,21 +472,25 @@ function CoordNotifications() {
   );
 }
 
-// ─── Profile (EDITÁVEL) ──────────────────────────────────────────
+// ─── Profile ─────────────────────────────────────────────────────
 function CoordProfile() {
   const { user, updateProfile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
   const [changingPassword, setChangingPassword] = useState(false);
-const [senhaAtual, setSenhaAtual] = useState("");
-const [novaSenha, setNovaSenha] = useState("");
-const [confirmacao, setConfirmacao] = useState("");
-const [submittingPw, setSubmittingPw] = useState(false);
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
+  const [submittingPw, setSubmittingPw] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
-    e.preventDefault(); updateProfile({ name }); toast.success("Perfil atualizado!"); setEditing(false);
+    e.preventDefault();
+    updateProfile({ name });
+    toast.success("Perfil atualizado!");
+    setEditing(false);
   };
-  async function handleChangePassword(e: React.FormEvent) {
+
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (novaSenha !== confirmacao) { toast.error("As senhas não coincidem"); return; }
     if (novaSenha.length < 8) { toast.error("Mínimo 8 caracteres"); return; }
@@ -450,38 +498,60 @@ const [submittingPw, setSubmittingPw] = useState(false);
     try {
       const { authApi } = await import("@/services/api");
       await authApi.changePassword(senhaAtual, novaSenha, confirmacao);
-      toast.success("Senha alterada!"); setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao("");
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Erro"); }
-    finally { setSubmittingPw(false); }
-  }
+      toast.success("Senha alterada!");
+      setChangingPassword(false);
+      setSenhaAtual("");
+      setNovaSenha("");
+      setConfirmacao("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao alterar senha");
+    } finally {
+      setSubmittingPw(false);
+    }
+  };
 
   return (
     <div className="max-w-lg mx-auto">
       <h2 className="font-display font-semibold text-lg mb-4">Meu Perfil</h2>
       <div className="bg-card border rounded-md p-6 space-y-6">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-senac-blue flex items-center justify-center text-white text-xl font-bold">{user?.name?.charAt(0)}</div>
+          <div className="w-16 h-16 rounded-full bg-senac-blue flex items-center justify-center text-white text-xl font-bold">
+            {user?.name?.charAt(0)}
+          </div>
           <div>
             <p className="font-display font-semibold">{user?.name}</p>
             <p className="text-sm text-muted-foreground">{user?.email}</p>
             <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Coordenador</span>
           </div>
         </div>
+
+        {/* Editar nome */}
         {editing ? (
           <form onSubmit={handleSave} className="space-y-3 pt-4 border-t">
-            <div className="space-y-1"><Label>Nome</Label><Input value={name} onChange={e => setName(e.target.value)} required /></div>
-            <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancelar</Button><Button type="submit">Salvar</Button></div>
+            <div className="space-y-1">
+              <Label>Nome</Label>
+              <Input value={name} onChange={e => setName(e.target.value)} required />
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancelar</Button>
+              <Button type="submit">Salvar</Button>
+            </div>
           </form>
         ) : (
           <div className="space-y-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => setEditing(true)} className="w-full"><Pencil className="h-4 w-4 mr-2" /> Editar Perfil</Button>
-            <Button variant="outline" onClick={() => setChangingPassword(true)} className="w-full">Alterar Senha</Button>
+            <Button variant="outline" onClick={() => { setEditing(true); setChangingPassword(false); }} className="w-full">
+              <Pencil className="h-4 w-4 mr-2" /> Editar Perfil
+            </Button>
+            <Button variant="outline" onClick={() => { setChangingPassword(true); setEditing(false); }} className="w-full">
+              Alterar Senha
+            </Button>
           </div>
         )}
+
+        {/* Alterar senha */}
         {changingPassword && (
           <form onSubmit={handleChangePassword} className="space-y-3 pt-4 border-t">
             <h3 className="font-semibold">Alterar Senha</h3>
-
             <div className="space-y-1">
               <Label>Senha Atual</Label>
               <Input
@@ -491,7 +561,6 @@ const [submittingPw, setSubmittingPw] = useState(false);
                 onChange={e => setSenhaAtual(e.target.value)}
               />
             </div>
-
             <div className="space-y-1">
               <Label>Nova Senha</Label>
               <Input
@@ -502,9 +571,8 @@ const [submittingPw, setSubmittingPw] = useState(false);
                 onChange={e => setNovaSenha(e.target.value)}
               />
             </div>
-
             <div className="space-y-1">
-              <Label>Confirmar</Label>
+              <Label>Confirmar nova senha</Label>
               <Input
                 type="password"
                 required
@@ -512,7 +580,6 @@ const [submittingPw, setSubmittingPw] = useState(false);
                 onChange={e => setConfirmacao(e.target.value)}
               />
             </div>
-
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -526,7 +593,6 @@ const [submittingPw, setSubmittingPw] = useState(false);
               >
                 Cancelar
               </Button>
-
               <Button type="submit" disabled={submittingPw}>
                 {submittingPw ? "Salvando..." : "Alterar"}
               </Button>
