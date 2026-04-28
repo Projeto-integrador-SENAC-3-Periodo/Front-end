@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  LayoutDashboard, Users, ClipboardList, FileCheck, Bell, Check, X, Eye, User, Pencil, ChevronDown, ChevronUp,
+  LayoutDashboard, Users, ClipboardList, FileCheck, Bell, Check, X, Eye, User, Pencil, ChevronDown, ChevronUp, Plus, ToggleLeft, ToggleRight, Trash2,
 } from "lucide-react";
 import { Routes, Route, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -25,12 +25,13 @@ import {
 
 // ─── Nav ──────────────────────────────────────────────────────────
 const navItems: NavItem[] = [
-  { label: "Dashboard",    path: "/coordinator",              icon: LayoutDashboard },
-  { label: "Alunos",       path: "/coordinator/students",     icon: Users },
-  { label: "Atividades",   path: "/coordinator/activities",   icon: ClipboardList },
-  { label: "Avaliar",      path: "/coordinator/proofs",       icon: FileCheck },
-  { label: "Notificações", path: "/coordinator/notifications",icon: Bell },
-  { label: "Perfil",       path: "/coordinator/profile",      icon: User },
+  { label: "Dashboard",       path: "/coordinator",                icon: LayoutDashboard },
+  { label: "Alunos",          path: "/coordinator/students",       icon: Users },
+  { label: "Atividades",      path: "/coordinator/activities",     icon: ClipboardList },
+  { label: "Avaliar",         path: "/coordinator/proofs",         icon: FileCheck },
+  { label: "Tipos de Ativ.",  path: "/coordinator/tipos",          icon: Pencil },
+  { label: "Notificações",    path: "/coordinator/notifications",  icon: Bell },
+  { label: "Perfil",          path: "/coordinator/profile",        icon: User },
 ];
 const bottomNavItems = [
   { label: "Dashboard",    path: "/coordinator",               icon: LayoutDashboard },
@@ -604,6 +605,161 @@ function CoordProfile() {
   );
 }
 
+// ─── Tipos de Atividade (Gestão pelo Coordenador) ────────────────
+function CoordTipos() {
+  const [tipos, setTipos] = useState<TipoAtividade[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editando, setEditando] = useState<TipoAtividade | null>(null);
+  const [criando, setCriando] = useState(false);
+  const [form, setForm] = useState({ nome: "", categoriaFixa: "" as CategoriaFixa | "", horasMaximas: "", requisito: "" });
+  const [submitting, setSubmitting] = useState(false);
+
+  const CATEGORIAS_LABEL: Record<CategoriaFixa, string> = {
+    ENSINO: "Ensino",
+    PESQUISA: "Pesquisa",
+    EXTENSAO: "Extensão",
+  };
+
+  const load = async () => {
+    setLoading(true);
+    try { setTipos(await tiposAtividadeApi.listTodos()); }
+    catch { toast.error("Erro ao carregar tipos"); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const resetForm = () => setForm({ nome: "", categoriaFixa: "", horasMaximas: "", requisito: "" });
+
+  const abrirEdicao = (t: TipoAtividade) => {
+    setEditando(t);
+    setForm({ nome: t.nome, categoriaFixa: t.categoriaFixa, horasMaximas: String(t.horasMaximas), requisito: t.requisito ?? "" });
+  };
+
+  const salvar = async () => {
+    if (!form.nome.trim() || !form.categoriaFixa || !form.horasMaximas) {
+      toast.error("Preencha todos os campos obrigatórios"); return;
+    }
+    setSubmitting(true);
+    try {
+      const payload = {
+        nome: form.nome.trim(),
+        categoriaFixa: form.categoriaFixa as CategoriaFixa,
+        horasMaximas: Number(form.horasMaximas),
+        requisito: form.requisito.trim() || undefined,
+      };
+      if (editando) {
+        await tiposAtividadeApi.update(editando.id, payload);
+        toast.success("Tipo atualizado!");
+      } else {
+        await tiposAtividadeApi.create(payload);
+        toast.success("Tipo criado!");
+      }
+      setEditando(null); setCriando(false); resetForm(); load();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao salvar"); }
+    finally { setSubmitting(false); }
+  };
+
+  const excluir = async (t: TipoAtividade) => {
+    if (!confirm(`Remover "${t.nome}"? Se estiver em uso, será apenas desativado.`)) return;
+    try { await tiposAtividadeApi.delete(t.id); toast.success("Tipo removido/desativado."); load(); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao remover"); }
+  };
+
+  const reativar = async (t: TipoAtividade) => {
+    try { await tiposAtividadeApi.reativar(t.id); toast.success("Tipo reativado!"); load(); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao reativar"); }
+  };
+
+  const showForm = criando || !!editando;
+
+  if (loading) return <TableSkeleton columns={4} />;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-display font-semibold text-lg">Tipos de Atividade</h2>
+        {!showForm && (
+          <Button size="sm" className="gap-2" onClick={() => { resetForm(); setCriando(true); }}>
+            <Plus className="h-4 w-4" /> Novo tipo
+          </Button>
+        )}
+      </div>
+
+      {showForm && (
+        <div className="bg-card border rounded-md p-5 space-y-4">
+          <h3 className="font-display font-semibold">{editando ? "Editar tipo" : "Novo tipo de atividade"}</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label>Nome *</Label>
+              <Input placeholder="Ex: Palestra, Monitoria, Artigo..." value={form.nome} onChange={e => setForm(p => ({ ...p, nome: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Categoria *</Label>
+              <Select value={form.categoriaFixa} onValueChange={v => setForm(p => ({ ...p, categoriaFixa: v as CategoriaFixa }))}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ENSINO">Ensino</SelectItem>
+                  <SelectItem value="PESQUISA">Pesquisa</SelectItem>
+                  <SelectItem value="EXTENSAO">Extensão</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Limite de horas * <span className="text-xs text-muted-foreground">(por aluno)</span></Label>
+              <Input type="number" min="1" placeholder="Ex: 40" value={form.horasMaximas} onChange={e => setForm(p => ({ ...p, horasMaximas: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Requisito / Observação</Label>
+              <Input placeholder="Ex: Exige certificado com carga horária" value={form.requisito} onChange={e => setForm(p => ({ ...p, requisito: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { setEditando(null); setCriando(false); resetForm(); }}>Cancelar</Button>
+            <Button onClick={salvar} disabled={submitting}>{submitting ? "Salvando..." : "Salvar"}</Button>
+          </div>
+        </div>
+      )}
+
+      {tipos.length === 0
+        ? <EmptyState title="Nenhum tipo cadastrado" description="Crie o primeiro tipo de atividade para que os alunos possam enviar." />
+        : (
+          <div className="bg-card border rounded-md divide-y">
+            {tipos.map((t) => (
+              <div key={t.id} className={`flex items-start justify-between gap-3 p-4 ${!t.ativo ? "opacity-50" : ""}`}>
+                <div className="space-y-0.5 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">{t.nome}</span>
+                    <span className="text-xs bg-muted px-2 py-0.5 rounded">{CATEGORIAS_LABEL[t.categoriaFixa]}</span>
+                    {!t.ativo && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">inativo</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Limite: {t.horasMaximas}h por aluno</p>
+                  {t.requisito && <p className="text-xs text-muted-foreground truncate">{t.requisito}</p>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {t.ativo ? (
+                    <>
+                      <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEdicao(t)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" title="Desativar/Remover" onClick={() => excluir(t)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={() => reativar(t)}>
+                      <ToggleRight className="h-4 w-4" /> Reativar
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+    </div>
+  );
+}
+
 // ─── Router ───────────────────────────────────────────────────────
 export default function CoordinatorDashboardPage() {
   const location = useLocation();
@@ -612,6 +768,7 @@ export default function CoordinatorDashboardPage() {
     "/coordinator/students": "Alunos",
     "/coordinator/activities": "Atividades",
     "/coordinator/proofs": "Avaliar Atividades",
+  "/coordinator/tipos": "Tipos de Atividade",
     "/coordinator/notifications": "Notificações",
     "/coordinator/profile": "Perfil",
   };
@@ -624,6 +781,7 @@ export default function CoordinatorDashboardPage() {
             <Route path="students" element={<CoordStudents />} />
             <Route path="activities" element={<CoordActivities />} />
             <Route path="proofs" element={<CoordProofs />} />
+            <Route path="tipos" element={<CoordTipos />} />
             <Route path="notifications" element={<CoordNotifications />} />
             <Route path="profile" element={<CoordProfile />} />
           </Routes>

@@ -57,7 +57,7 @@ export interface ApiActivity {
   idCurso: string;
   nomeCurso: string;
   categoriaFixa: CategoriaFixa;
-  /** Tipo de atividade em texto livre — conforme digitado pelo aluno */
+  idTipoAtividade?: string;
   tipoAtividade: string;
   descricao: string;
   horasSolicitadas: number;
@@ -86,7 +86,14 @@ export interface ApiCertificate {
  
 export interface ApiLog { action: string; user: string; date: string; }
  
-export interface TipoAtividade { id: string; nome: string; descricao?: string; }
+export interface TipoAtividade {
+  id: string;
+  nome: string;
+  categoriaFixa: CategoriaFixa;
+  horasMaximas: number;
+  requisito?: string;
+  ativo: boolean;
+}
  
 export interface UserCursoVinculo {
   id: string; nome: string; email: string; matricula?: string;
@@ -146,7 +153,8 @@ function mapAtividadeRow(a: Record<string, unknown>): ApiActivity {
     idCurso: String(a.idCurso ?? ""),
     nomeCurso: String(a.nomeCurso ?? ""),
     categoriaFixa: (String(a.categoriaFixa ?? "EXTENSAO")) as CategoriaFixa,
-    tipoAtividade: String(a.tipoAtividade ?? ""),
+    tipoAtividade: a.nomeTipoAtividade != null ? String(a.nomeTipoAtividade) : String(a.tipoAtividade ?? ""),
+    idTipoAtividade: a.idTipoAtividade != null ? String(a.idTipoAtividade) : undefined,
     descricao: String(a.descricao ?? ""),
     horasSolicitadas: Number(a.horasSolicitadas ?? 0),
     horasAprovadas: a.horasAprovadas != null ? Number(a.horasAprovadas) : null,
@@ -260,11 +268,47 @@ export const coursesApi = {
  
 // ─── Tipos de atividade ───────────────────────────────────────────
  
+function mapTipoAtividade(t: Record<string, unknown>): TipoAtividade {
+  return {
+    id: String(t.id ?? t.idTA ?? ""),
+    nome: String(t.nome ?? ""),
+    categoriaFixa: String(t.categoriaFixa ?? t.categoriaF ?? "EXTENSAO") as CategoriaFixa,
+    horasMaximas: Number(t.horasMaximas ?? 0),
+    requisito: t.requisito != null ? String(t.requisito) : undefined,
+    ativo: Boolean(t.ativo ?? true),
+  };
+}
+ 
 export const tiposAtividadeApi = {
   list: async (): Promise<TipoAtividade[]> => {
     const raw = await apiFetch<Record<string, unknown>[]>("/tipos-atividade");
     if (!Array.isArray(raw)) return [];
-    return raw.map((t) => ({ id: String(t.idTA ?? t.id ?? ""), nome: String(t.nome ?? ""), descricao: t.descricao != null ? String(t.descricao) : undefined }));
+    return raw.map(mapTipoAtividade);
+  },
+  listTodos: async (): Promise<TipoAtividade[]> => {
+    const raw = await apiFetch<Record<string, unknown>[]>("/tipos-atividade/todos");
+    if (!Array.isArray(raw)) return [];
+    return raw.map(mapTipoAtividade);
+  },
+  listByCategoria: async (categoria: CategoriaFixa): Promise<TipoAtividade[]> => {
+    const raw = await apiFetch<Record<string, unknown>[]>(`/tipos-atividade/categoria/${categoria}`);
+    if (!Array.isArray(raw)) return [];
+    return raw.map(mapTipoAtividade);
+  },
+  create: async (data: { nome: string; categoriaFixa: CategoriaFixa; horasMaximas: number; requisito?: string }): Promise<TipoAtividade> => {
+    const raw = await apiFetch<Record<string, unknown>>("/tipos-atividade", { method: "POST", body: JSON.stringify(data) });
+    return mapTipoAtividade(raw ?? {});
+  },
+  update: async (id: string, data: { nome: string; categoriaFixa: CategoriaFixa; horasMaximas: number; requisito?: string }): Promise<TipoAtividade> => {
+    const raw = await apiFetch<Record<string, unknown>>(`/tipos-atividade/${id}`, { method: "PUT", body: JSON.stringify(data) });
+    return mapTipoAtividade(raw ?? {});
+  },
+  delete: async (id: string): Promise<void> => {
+    await apiFetch<void>(`/tipos-atividade/${id}`, { method: "DELETE" });
+  },
+  reativar: async (id: string): Promise<TipoAtividade> => {
+    const raw = await apiFetch<Record<string, unknown>>(`/tipos-atividade/${id}/reativar`, { method: "PATCH" });
+    return mapTipoAtividade(raw ?? {});
   },
 };
  
@@ -273,8 +317,7 @@ export const tiposAtividadeApi = {
 export interface SubmeterAtividadeInput {
   idAluno: string;
   categoriaFixa: CategoriaFixa;
-  /** Tipo de atividade em texto livre — digitado pelo aluno */
-  tipoAtividade: string;
+  idTipoAtividade: string;
   descricao?: string;
   horasSolicitadas: number;
   idCurso: string;
@@ -332,7 +375,7 @@ export const activitiesApi = {
     const fd = new FormData();
     fd.append("idAluno", input.idAluno);
     fd.append("categoriaFixa", input.categoriaFixa);
-    fd.append("tipoAtividade", input.tipoAtividade);
+    fd.append("tipoAtividade", input.idTipoAtividade);
     if (input.descricao) fd.append("descricao", input.descricao);
     fd.append("horasSolicitadas", String(input.horasSolicitadas));
     fd.append("idCurso", input.idCurso);

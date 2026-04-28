@@ -24,10 +24,12 @@ import {
   certificadosApi,
   userCursoApi,
   notificacoesApi,
+  tiposAtividadeApi,
   type ApiActivity,
   type ApiCertificate,
   type ApiNotification,
   type CategoriaFixa,
+  type TipoAtividade,
   type ApiHorasAluno,
 } from "@/services/api";
 
@@ -331,10 +333,12 @@ function StudentSubmit() {
   const { user } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [cursos, setCursos] = useState<{ id: string; nome: string; horasComplementares: number; dataMatricula: string }[]>([]);
+  const [tipos, setTipos] = useState<TipoAtividade[]>([]);
+  const [loadingTipos, setLoadingTipos] = useState(false);
   const [form, setForm] = useState({
     idCurso: "",
     categoriaFixa: "" as CategoriaFixa | "",
-    tipoAtividade: "",
+    idTipoAtividade: "",
     descricao: "",
     horasSolicitadas: "",
   });
@@ -344,33 +348,44 @@ function StudentSubmit() {
     if (!user?.id) return;
     userCursoApi.listarCursosDoAluno(user.id).then((c) => {
       setCursos(c);
-      // Se só tiver um curso, preenche automaticamente
       if (c.length === 1) setForm((p) => ({ ...p, idCurso: c[0].id }));
     }).catch(() => toast.error("Erro ao carregar seus cursos"));
   }, [user?.id]);
 
+  const onCategoriaChange = async (categoria: CategoriaFixa) => {
+    setForm(p => ({ ...p, categoriaFixa: categoria, idTipoAtividade: "" }));
+    setLoadingTipos(true);
+    try {
+      const lista = await tiposAtividadeApi.listByCategoria(categoria);
+      setTipos(lista);
+    } catch { toast.error("Erro ao carregar tipos de atividade"); }
+    finally { setLoadingTipos(false); }
+  };
+
+  const tipoSelecionado = tipos.find(t => t.id === form.idTipoAtividade);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.id || !file || !form.categoriaFixa || !form.tipoAtividade.trim()) return;
+    if (!user?.id || !file || !form.categoriaFixa || !form.idTipoAtividade) return;
 
-    // Curso: usa o único disponível ou o selecionado
     const cursoId = form.idCurso || (cursos.length === 1 ? cursos[0].id : "");
     if (!cursoId) { toast.error("Selecione um curso"); return; }
 
     setSubmitting(true);
     try {
-        await activitiesApi.submeter({
-          idAluno: user.id,
-          categoriaFixa: form.categoriaFixa,
-          tipoAtividade: form.tipoAtividade,
-          descricao: form.descricao,
-          horasSolicitadas: Number(form.horasSolicitadas),
-          idCurso: form.idCurso,
-          comprovante: file,
-       });
+      await activitiesApi.submeter({
+        idAluno: user.id,
+        categoriaFixa: form.categoriaFixa,
+        idTipoAtividade: form.idTipoAtividade,
+        descricao: form.descricao,
+        horasSolicitadas: Number(form.horasSolicitadas),
+        idCurso: cursoId,
+        comprovante: file,
+      });
       toast.success("Atividade enviada! Aguarde a avaliação do coordenador.");
-      setForm((p) => ({ ...p, categoriaFixa: "",tipoAtividade: "", descricao: "",horasSolicitadas: "", }));
+      setForm((p) => ({ ...p, categoriaFixa: "", idTipoAtividade: "", descricao: "", horasSolicitadas: "" }));
       setFile(null);
+      setTipos([]);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao enviar"); }
     finally { setSubmitting(false); }
   };
@@ -381,7 +396,6 @@ function StudentSubmit() {
     <div className="max-w-lg mx-auto space-y-4">
       <form onSubmit={handleSubmit} className="bg-card border rounded-md p-5 space-y-4">
 
-        {/* Seletor de curso — só aparece se o aluno tiver mais de 1 curso */}
         {cursosMultiplos && (
           <div className="space-y-2">
             <Label>Curso *</Label>
@@ -394,7 +408,7 @@ function StudentSubmit() {
 
         <div className="space-y-2">
           <Label>Categoria *</Label>
-          <Select value={form.categoriaFixa} onValueChange={(v) => setForm(p => ({ ...p, categoriaFixa: v as CategoriaFixa }))}>
+          <Select value={form.categoriaFixa} onValueChange={(v) => onCategoriaChange(v as CategoriaFixa)}>
             <SelectTrigger><SelectValue placeholder="Selecione a categoria" /></SelectTrigger>
             <SelectContent>{CATEGORIAS.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
           </Select>
@@ -402,15 +416,34 @@ function StudentSubmit() {
 
         <div className="space-y-2">
           <Label>Tipo de Atividade *</Label>
-          <Input
-            placeholder="Ex: Palestra, Curso, Workshop..."
-            required
-            value={form.tipoAtividade}
-            onChange={(e) =>
-              setForm((p) => ({ ...p, tipoAtividade: e.target.value }))
-            }
-          />
-      </div>
+          <Select
+            value={form.idTipoAtividade}
+            onValueChange={(v) => setForm(p => ({ ...p, idTipoAtividade: v }))}
+            disabled={!form.categoriaFixa || loadingTipos}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={
+                !form.categoriaFixa ? "Selecione a categoria primeiro" :
+                loadingTipos ? "Carregando..." :
+                tipos.length === 0 ? "Nenhum tipo disponível" :
+                "Selecione o tipo"
+              } />
+            </SelectTrigger>
+            <SelectContent>
+              {tipos.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.nome} {t.horasMaximas > 0 ? `(máx. ${t.horasMaximas}h)` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {tipoSelecionado?.requisito && (
+            <p className="text-xs text-muted-foreground bg-muted/40 rounded p-2">{tipoSelecionado.requisito}</p>
+          )}
+          {tipoSelecionado?.horasMaximas > 0 && (
+            <p className="text-xs text-amber-600">Limite: {tipoSelecionado.horasMaximas}h para este tipo</p>
+          )}
+        </div>
 
         <div className="space-y-2">
           <Label>Descrição</Label>
@@ -431,7 +464,7 @@ function StudentSubmit() {
         <Button
           type="submit"
           className="w-full gap-2"
-          disabled={submitting || !form.categoriaFixa || !form.tipoAtividade.trim() || !form.horasSolicitadas || !file || (cursosMultiplos && !form.idCurso)}>
+          disabled={submitting || !form.categoriaFixa || !form.idTipoAtividade || !form.horasSolicitadas || !file || (cursosMultiplos && !form.idCurso)}>
           {submitting
             ? <><span className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" /> Enviando...</>
             : <><Upload className="h-4 w-4" /> Enviar Atividade</>}
