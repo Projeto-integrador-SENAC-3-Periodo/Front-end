@@ -136,20 +136,24 @@ function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [horas, setHoras] = useState<ApiHorasAluno | null>(null);
   const [recent, setRecent] = useState<ApiActivity[]>([]);
+  const [cursos, setCursos] = useState<{ id: string; nome: string }[]>([]);
+  const [selectedCurso, setSelectedCurso] = useState("");
 
   useEffect(() => {
     if (!user?.id) { setLoading(false); return; }
     let cancelled = false;
     (async () => {
       try {
-        const [acts, cursos] = await Promise.all([
+        const [acts, listaCursos] = await Promise.all([
           activitiesApi.listByStudent(user.id),
           userCursoApi.listarCursosDoAluno(user.id),
         ]);
         if (cancelled) return;
         setRecent(acts.slice(0, 5));
-        if (cursos.length > 0) {
-          const h = await activitiesApi.horasAluno(user.id, cursos[0].id).catch(() => null);
+        setCursos(listaCursos);
+        if (listaCursos.length > 0) {
+          setSelectedCurso(listaCursos[0].id);
+          const h = await activitiesApi.horasAluno(user.id, listaCursos[0].id).catch(() => null);
           if (!cancelled) setHoras(h);
         }
       } catch { toast.error("Erro ao carregar dados"); }
@@ -157,6 +161,11 @@ function StudentDashboard() {
     })();
     return () => { cancelled = true; };
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !selectedCurso) return;
+    activitiesApi.horasAluno(user.id, selectedCurso).then(setHoras).catch(() => setHoras(null));
+  }, [user?.id, selectedCurso]);
 
   if (loading) return <CardSkeleton count={3} />;
   const pct = horas ? Math.min(100, Math.round((horas.horasAprovadas / horas.horasLimite) * 100)) : 0;
@@ -170,6 +179,12 @@ function StudentDashboard() {
       </div>
       {horas && (
         <div className="bg-card border rounded-md p-5 space-y-2">
+          {cursos.length > 1 && (
+            <Select value={selectedCurso} onValueChange={setSelectedCurso}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione o curso" /></SelectTrigger>
+              <SelectContent>{cursos.map((c) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}</SelectContent>
+            </Select>
+          )}
           <div className="flex justify-between text-sm font-medium">
             <span>Progresso de horas complementares</span>
             <span>{pct}%</span>
@@ -540,17 +555,21 @@ function StudentCertificates() {
   const { user } = useAuth();
   const [certs, setCerts] = useState<ApiCertificate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [horasInfo, setHorasInfo] = useState<{ aprovadas: number; limite: number } | null>(null);
+  const [horasInfo, setHorasInfo] = useState<{ aprovadas: number; limite: number; nomeCurso: string }[] | null>(null);
 
   useEffect(() => {
     if (!user?.id) { setLoading(false); return; }
-    // Carrega certificados e horas em paralelo
     Promise.all([
       certificadosApi.listByAluno(user.id),
       userCursoApi.listarCursosDoAluno(user.id).then(async (cursos) => {
-        if (cursos.length === 0) return null;
-        const h = await activitiesApi.horasAluno(user.id, cursos[0].id).catch(() => null);
-        return h ? { aprovadas: h.horasAprovadas, limite: h.horasLimite } : null;
+        if (cursos.length === 0) return [];
+        const resultados = await Promise.all(
+          cursos.map(async (curso) => {
+            const h = await activitiesApi.horasAluno(user.id, curso.id).catch(() => null);
+            return h ? { aprovadas: h.horasAprovadas, limite: h.horasLimite, nomeCurso: curso.nome } : null;
+          })
+        );
+        return resultados.filter(Boolean) as { aprovadas: number; limite: number; nomeCurso: string }[];
       }),
     ])
       .then(([c, h]) => { setCerts(c); setHorasInfo(h); })
@@ -560,7 +579,10 @@ function StudentCertificates() {
 
   if (loading) return <CardSkeleton count={2} />;
 
-  const atingiuHoras = horasInfo != null && horasInfo.aprovadas >= horasInfo.limite;
+  const cursosAtingidos = horasInfo?.filter(h => h.aprovadas >= h.limite) ?? [];
+  const atingiuHoras = cursosAtingidos.length > 0;
+  const totalAprovadas = horasInfo?.reduce((acc, h) => acc + h.aprovadas, 0) ?? 0;
+  const totalLimite = horasInfo?.reduce((acc, h) => acc + h.limite, 0) ?? 0;
 
   return (
     <div className="space-y-4">
@@ -570,19 +592,20 @@ function StudentCertificates() {
           title="Nenhum certificado disponível"
           description={
             atingiuHoras
-              ? "Você atingiu as horas exigidas! Seu certificado será emitido em breve."
-              : horasInfo
-                ? `Após atingir as ${horasInfo.limite}h totais que o curso exige, o seu certificado aparecerá aqui. Você tem ${horasInfo.aprovadas}h aprovadas.`
+              ? `Parabéns! Você atingiu as horas exigidas em ${cursosAtingidos.map(c => c.nomeCurso).join(", ")}. Seu certificado será emitido em breve.`
+              : horasInfo && horasInfo.length > 0
+                ? `Você tem ${totalAprovadas}h aprovadas de ${totalLimite}h exigidas no total. Complete as horas de cada curso para receber o certificado.`
                 : "Após atingir as horas totais que o curso exige, o seu certificado aparecerá aqui."
           }
         />
       ) : (
         certs.map((c) => (
           <div key={c.id} className="bg-card border rounded-md p-4 flex items-center justify-between">
-            <div><p className="font-medium">{c.activityTitle}</p><p className="text-xs text-muted-foreground">{c.date}</p></div>
-            <a href={c.downloadUrl} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" size="sm" className="gap-1"><Download className="h-3 w-3" /> Baixar</Button>
-            </a>
+            <div>
+              <p className="font-medium flex items-center gap-2"><Award className="h-4 w-4 text-senac-blue" />{c.nomeCurso}</p>
+              <p className="text-xs text-muted-foreground mt-1">{c.descricao}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Emitido em: {c.dataEmissao ? new Date(c.dataEmissao).toLocaleDateString("pt-BR") : "—"}</p>
+            </div>
           </div>
         ))
       )}
