@@ -481,7 +481,6 @@ function AdminVinculos() {
     }
   };
 
-  // Usuários disponíveis para vincular (filtra quem já está vinculado)
   const membroIds = new Set(membros.map((m) => m.id));
   const papel = tab === "aluno" ? "student" : "coordinator";
   const disponiveis = usuarios.filter((u) => u.role === papel && !membroIds.has(u.id));
@@ -526,7 +525,7 @@ function AdminVinculos() {
             {(["aluno", "coordenador"] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t ? "border-senac-blue text-senac-blue" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-                {t === "aluno" ? "Alunos" : "Coordenador"}
+                {t === "aluno" ? "Alunos" : "Coordenadores"}
               </button>
             ))}
           </div>
@@ -536,7 +535,7 @@ function AdminVinculos() {
             <div className="bg-muted/30 rounded-md px-4 py-2 text-sm flex flex-wrap gap-4">
               <span><strong>{cursoSelecionado.name}</strong></span>
               <span className="text-muted-foreground">{cursoSelecionado.horasComplementares}h complementares</span>
-              <span className="text-muted-foreground">Coordenador: {cursoSelecionado.coordinatorName}</span>
+              <span className="text-muted-foreground">Coordenadores: {cursoSelecionado.coordinatorName}</span>
               <span className="text-muted-foreground">{cursoSelecionado.studentCount} alunos</span>
             </div>
           )}
@@ -545,21 +544,18 @@ function AdminVinculos() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-muted-foreground">
-                {tab === "aluno" ? `${membros.length} aluno(s) vinculado(s)` : membros.length > 0 ? "Coordenador vinculado" : "Sem coordenador"}
+                {tab === "aluno" ? `${membros.length} aluno(s) vinculado(s)` : `${membros.length} coordenador(es) vinculado(s)`}
               </p>
-              <Button size="sm" className="gap-2" onClick={() => { setSelectedUser(""); setModalOpen(true); }}
-                disabled={tab === "coordenador" && membros.length > 0}>
+              <Button size="sm" className="gap-2" onClick={() => { setSelectedUser(""); setModalOpen(true); }}>
                 <Plus className="h-4 w-4" />
                 {tab === "aluno" ? "Vincular Aluno" : "Vincular Coordenador"}
               </Button>
             </div>
-            {tab === "coordenador" && membros.length > 0 && (
-              <p className="text-xs text-amber-600">Para trocar o coordenador, primeiro desvincule o atual.</p>
-            )}
+
             {loadingMembros
               ? <TableSkeleton columns={3} />
               : membros.length === 0
-                ? <EmptyState title={tab === "aluno" ? "Nenhum aluno vinculado" : "Sem coordenador"} description={tab === "aluno" ? "Clique em 'Vincular Aluno' para adicionar." : "Clique em 'Vincular Coordenador' para definir."} />
+                ? <EmptyState title={tab === "aluno" ? "Nenhum aluno vinculado" : "Nenhum coordenador vinculado"} description={tab === "aluno" ? "Clique em 'Vincular Aluno' para adicionar." : "Clique em 'Vincular Coordenador' para adicionar."} />
                 : <DataTable columns={columns} data={membros} />}
           </div>
         </>
