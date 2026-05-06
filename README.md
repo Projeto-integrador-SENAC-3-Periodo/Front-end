@@ -34,23 +34,15 @@ Para rodar o projeto corretamente:
 ```bash
 npm install
 
----
+## 📦 Caso seja necessário instalar manualmente
 
-## Caso seja necessário instalar manualmente:
-
-Dependências principais:
-
+### Dependências principais
 npm install react react-dom axios @tanstack/react-query
 
-Ambiente de desenvolvimento:
-
+### Ambiente de desenvolvimento e estilização
 npm install -D vite typescript @types/react @types/react-dom
-
----
-
-## Estilização:
-
 npm install tailwindcss postcss autoprefixer tailwindcss-animate
+```
 
 ---
 
@@ -70,25 +62,19 @@ src/
 
 ---
 
-⚙️ Como rodar o projeto
+## ⚙️ Como rodar o projeto
 
-1️⃣ Clone o repositório
-
+1. Clone o repositório
 git clone <url-do-repositorio>
 
-2️⃣ Acesse a pasta
-
+2. Acesse a pasta
 cd Front-end-main
 
-3️⃣ Instale as dependências
-
+3. Instale as dependências
 npm install
 
-4️⃣ Execute o projeto
-
+4. Execute o projeto
 npm run dev
-
----
 
 🌐 Acesse no navegador:
 http://localhost:5173
@@ -97,25 +83,25 @@ http://localhost:5173
 
 ## 🎯 Funcionalidades
 
-✔ Cadastro de atividades complementares
-✔ Controle de horas aprovadas
-✔ Acompanhamento de solicitações
-✔ Sistema de notificações
-✔ Interface responsiva
+- Cadastro de atividades complementares
+- Controle de horas aprovadas
+- Acompanhamento de solicitações
+- Sistema de notificações
+- Interface responsiva
 
 ---
 
-## 🔗 Acesso ao projeto  
+## 🔗 Acesso ao projeto
 
-🚀 **Sistema em funcionamento:**  
+🚀 Sistema em funcionamento:
 👉 (coloque aqui o link do deploy)
 
 ---
 
 ## 👩‍💻 Autoras
 
-✨ Abigail Nazario
-✨ Carolline Barbosa
-✨ Kallyne Melo
-✨ Sofia Leitão
-✨ Tamirys Maria
+- Abigail Nazario
+- Carolline Barbosa
+- Kallyne Melo
+- Sofia Leitão
+- Tamirys Maria
