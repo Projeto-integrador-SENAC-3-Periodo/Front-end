@@ -48,6 +48,7 @@ npm install tailwindcss postcss autoprefixer tailwindcss-animate
 
 ## 📁 Estrutura do projeto
 
+```bash
 Front-end-main/
 │
 ├── node_modules/
@@ -76,6 +77,7 @@ Front-end-main/
 ├── vitest.config.ts
 ├── playwright.config.ts
 └── README.md
+```
 
 ---
 
