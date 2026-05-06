@@ -47,18 +47,35 @@ npm install tailwindcss postcss autoprefixer tailwindcss-animate
 ---
 
 ## 📁 Estrutura do projeto
-src/
-│  
-├── components/  
-│   ├── ui/  
-│   ├── shared/  
-│   └── layout/  
-│  
-├── pages/  
-├── services/  
-├── hooks/  
-├── App.tsx  
-└── main.tsx
+
+Front-end-main/
+│
+├── node_modules/
+├── public/
+├── src/
+│   ├── components/
+│   ├── hooks/
+│   ├── pages/
+│   ├── services/
+│   ├── App.tsx
+│   └── main.tsx
+│
+├── .env
+├── .gitignore
+├── components.json
+├── eslint.config.js
+├── index.html
+├── package.json
+├── package-lock.json
+├── postcss.config.js
+├── tailwind.config.ts
+├── tsconfig.json
+├── tsconfig.app.json
+├── tsconfig.node.json
+├── vite.config.ts
+├── vitest.config.ts
+├── playwright.config.ts
+└── README.md
 
 ---
 
