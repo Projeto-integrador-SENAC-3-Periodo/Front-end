@@ -113,7 +113,7 @@ http://localhost:5173
 ## 🔗 Acesso ao projeto
 
 🚀 Sistema em funcionamento:
-👉 (coloque aqui o link do deploy)
+👉 https://horascomplementaresfsenac.netlify.app/login
 
 ---
 
