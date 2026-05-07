@@ -22,6 +22,7 @@ import {
 } from "@/services/api";
 
 // ─── Nav ──────────────────────────────────────────────────────────
+// Navegação do sistema
 const navItems: NavItem[] = [
   { label: "Dashboard",    path: "/admin",               icon: LayoutDashboard },
   { label: "Usuários",     path: "/admin/users",         icon: Users },
@@ -59,11 +60,11 @@ function BottomNav() {
 // ─── Dashboard ────────────────────────────────────────────────────
 function AdminDashboard() {
   const [loading, setLoading] = useState(true);
-  const [counts, setCounts] = useState({ usuarios: 0, cursos: 0 });
+  const [counts, setCounts] = useState({ usuarios: 0, cursos: 0 }); // Métricas gerais do sistema
 
   useEffect(() => {
-    Promise.all([usersApi.list(), coursesApi.list()])
-      .then(([u, c]) => setCounts({ usuarios: u.length, cursos: c.length }))
+    Promise.all([usersApi.list(), coursesApi.list()]) // Chamadas para a API e atualizo os dados exibidos
+      .then(([u, c]) => setCounts({ usuarios: u.length, cursos: c.length })) 
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -88,6 +89,7 @@ function AdminDashboard() {
 }
 
 // ─── Users ────────────────────────────────────────────────────────
+// Gestão de usuários
 function AdminUsers() {
   const [data, setData] = useState<ApiUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -184,6 +186,7 @@ function AdminCourses() {
   const openCreate = () => { setEditing(null); setFormData({ name: "", description: "", horasComplementares: "" }); setModalOpen(true); };
   const openEdit = (c: ApiCourse) => { setEditing(c); setFormData({ name: c.name, description: c.description, horasComplementares: String(c.horasComplementares) }); setModalOpen(true); };
 
+// Gestão de cursos
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload = { name: formData.name, description: formData.description, horasComplementares: Number(formData.horasComplementares) };
@@ -246,6 +249,7 @@ function AdminNotifications() {
       .finally(() => setLoading(false));
   }, [user?.id]);
 
+  // Marcação de mensagens lidas
   const markAsRead = async (id: number) => {
     try { await notificacoesApi.marcarLida(id); setNotifications(p => p.map(n => n.id === id ? { ...n, read: true } : n)); }
     catch { toast.error("Não foi possível atualizar"); }
@@ -277,6 +281,7 @@ function AdminNotifications() {
 }
 
 // ─── Logs ─────────────────────────────────────────────────────────
+// Criação, edição ou exclusão
 function AdminLogs() {
   const [data, setData] = useState<ApiLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -317,7 +322,7 @@ function AdminProfile() {
     setSubmittingPw(true);
     try {
       const { authApi } = await import("@/services/api");
-      await authApi.changePassword(senhaAtual, novaSenha, confirmacao);
+      await authApi.changePassword(senhaAtual, novaSenha, confirmacao); 
       toast.success("Senha alterada!"); setChangingPassword(false); setSenhaAtual(""); setNovaSenha(""); setConfirmacao("");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Erro"); }
     finally { setSubmittingPw(false); }
@@ -408,7 +413,7 @@ function AdminProfile() {
 
 // ─── Vínculos (Alunos e Coordenadores por Curso) ─────────────────
 function AdminVinculos() {
-  const [tab, setTab] = useState<"aluno" | "coordenador">("aluno");
+  const [tab, setTab] = useState<"aluno" | "coordenador">("aluno"); // Estado que controla a aba ativa da interface (aluno ou coordenador).
   const [cursos, setCursos] = useState<ApiCourse[]>([]);
   const [usuarios, setUsuarios] = useState<ApiUser[]>([]);
   const [membros, setMembros] = useState<UserCursoVinculo[]>([]);
@@ -427,7 +432,7 @@ function AdminVinculos() {
       .catch(() => toast.error("Erro ao carregar dados"));
   }, []);
 
-  // Recarrega membros quando curso ou tab mudam
+  // Recarrega membros quando curso ou tab mudam (Muda de curso ou troca de aba, filtro)
   useEffect(() => {
     if (!selectedCurso) { setMembros([]); return; }
     setLoadingMembros(true);
@@ -459,6 +464,7 @@ function AdminVinculos() {
       setModalOpen(false);
       setSelectedUser("");
       recarregarMembros();
+      
       // Recarrega cursos para atualizar nome do coordenador na listagem
       coursesApi.list().then(setCursos).catch(() => {});
     } catch (e) {
@@ -625,6 +631,7 @@ const titleMap: Record<string, string> = {
   "/admin/profile": "Perfil",
 };
 
+// Função principal do dashboard de administrador
 export default function AdminDashboardPage() {
   const location = useLocation();
   return (
